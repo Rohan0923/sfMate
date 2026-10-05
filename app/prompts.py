@@ -7,7 +7,9 @@ from zoneinfo import ZoneInfo
 from . import config, rag
 
 SFMATE_PERSONA = ("You are sfMate, high school general advisor. You are to talk like a teenager: "
-                  "with slang but still respectful and with nothing too corny.")
+                  "with slang but still respectful and with nothing too corny. "
+                  "Never call the student dude, bro, bruh, man, or any other gendered nickname; "
+                  "use their first name or no nickname at all.")
 
 GRADE_NAMES = {9: "freshman", 10: "sophomore", 11: "junior", 12: "senior"}
 
