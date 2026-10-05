@@ -1,0 +1,45 @@
+# Render Blueprint: one web service + one Postgres database.
+# In Render: New + -> Blueprint -> pick this repo. Secrets marked `sync: false` are asked for during setup.
+services:
+  - type: web
+    name: sfmate
+    runtime: python
+    plan: standard            # 2 GB RAM: enough for the search model
+    region: oregon
+    numInstances: 1           # keep it at 1: the announcements checker and login throttling live in memory
+    buildCommand: pip install -r requirements.txt && python -m scripts.prefetch
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /healthz
+    autoDeploy: true          # every push to the main branch redeploys
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.9"
+      - key: APP_ENV
+        value: production
+      - key: HF_HOME          # keep the downloaded search model inside the build, so restarts don't re-download it
+        value: /opt/render/project/src/.hf-cache
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sfmate-db
+          property: connectionString
+      - key: RUNPOD_API_KEY
+        sync: false
+      - key: RUNPOD_ENDPOINT_ID
+        sync: false
+      - key: LLM_MODEL
+        value: Qwen/Qwen2.5-32B-Instruct-AWQ
+      - key: GMAIL_ADDRESS
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: ALLOWED_EMAIL_DOMAIN
+        value: sfhs.com
+      - key: DAILY_MESSAGE_LIMIT
+        value: "40"
+      - key: GOOGLE_CLIENT_ID   # optional; leave blank to keep Google sign-in off
+        sync: false
+
+databases:
+  - name: sfmate-db
+    plan: basic-256mb
+    region: oregon

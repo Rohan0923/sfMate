@@ -1,0 +1,10 @@
+{
+  "built_at": "2026-10-04T06:47:22+00:00",
+  "embed_model": "BAAI/bge-base-en-v1.5",
+  "chunks": 1394,
+  "sources": {
+    "sfhs.com pages": 308,
+    "handbook sections": 68,
+    "course guide sections": 178
+  }
+}
