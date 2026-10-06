@@ -23,6 +23,7 @@ DESCRIPTION_CHARS = 600
 events = []        # every event from every feed, sorted by start
 _feeds = {}        # url -> (label, events): a feed that fails to refresh keeps its last good copy
 _emb_cache = {}    # event text -> embedding, so a refresh only embeds new or changed events
+_searchable = ([], None)   # (events, their embeddings), swapped in one assignment
 _stop = threading.Event()
 
 
@@ -109,6 +110,26 @@ def upcoming_text(now, days=None, max_events=None):
     return "\n".join(lines)
 
 
+# ---------- looking things up (the scheduling route) ----------
+def is_day_schedule(ev):
+    """Entries from the calendar that names each school day's bell schedule (B1, G2, NO SCHOOL...)."""
+    return "schedule" in ev["calendar"].lower()
+
+
+def events_between(start, end):
+    """Every event that happens on any day from start to end (inclusive), including ones that started earlier."""
+    return [ev for ev in events if _day(ev["start"]) <= end and _day(ev["end"] or ev["start"]) >= start]
+
+
+def search(query, k=8):
+    """Calendar events only, best match first."""
+    items, embs = _searchable
+    if not items:
+        return []
+    scores = embs @ rag.embed([query], query=True)[0]
+    return [items[i] for i in np.argsort(-scores)[:k]]
+
+
 # ---------- refreshing ----------
 def _index(items):
     chunks = [{"url": "", "title": f"{ev['calendar']} · {ev['title']} · {day_label(_day(ev['start']))}",
@@ -121,6 +142,8 @@ def _index(items):
         del _emb_cache[stale]
     embs = np.stack([_emb_cache[t] for t in texts]) if texts else None
     rag.EXTRA_SOURCES["calendars"] = (chunks, embs)
+    global _searchable
+    _searchable = (list(items), embs)
 
 
 def school_today():

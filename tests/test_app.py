@@ -120,6 +120,7 @@ def test_announcements_flow(client, make_user, fake_llm, monkeypatch):
 def test_announcements_are_searchable_with_dates(client, make_user, fake_llm):
     h = make_user()
     announcements._index([fake_announcement(text="Rally today at 2:40 in the gym. Wear gold.")])
+    fake_llm.queue = [["NONE"]]   # a scheduling question, but not on the calendars: falls back to all sources
     events = sse_events(client.post("/chat", json={"message": "when is the rally in the gym"}, headers=h).text)
     titles = [s["title"] for s in events[0]["sources"]]
     assert titles[0].startswith("Daily Announcements · ")

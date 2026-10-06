@@ -28,12 +28,13 @@ class FakeEmbedder:
 class FakeLLM:
     def __init__(self):
         self.calls, self.reply, self.fail = [], ["Phones ", "stay off ", "the dance floor [1]."], False
+        self.queue = []   # replies for the next calls, in order (then `reply` for the rest)
 
     def stream_chat(self, messages, max_tokens=512, temperature=0.3):
         self.calls.append(messages)
         if self.fail:
             raise llm.LLMError("sfMate's brain didn't respond. Try again in a minute.")
-        yield from self.reply
+        yield from (self.queue.pop(0) if self.queue else self.reply)
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +49,7 @@ def fresh_state(monkeypatch):
                 {"url": "https://x/guide.pdf#page=30", "title": "Guide · 653 AP Chemistry", "text": "chemistry prerequisite honors"}]
     rag.doc_embs = rag.embed([f"{d['title']}\n{d['text']}" for d in rag.docs])
     rag.EXTRA_SOURCES.clear()
-    calendars.events, calendars._feeds, calendars._emb_cache = [], {}, {}
+    calendars.events, calendars._feeds, calendars._emb_cache, calendars._searchable = [], {}, {}, ([], None)
     yield
 
 

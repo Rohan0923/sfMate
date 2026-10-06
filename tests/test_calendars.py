@@ -128,7 +128,7 @@ def test_upcoming_list_goes_into_the_chat_prompt(feeds, monkeypatch):
     calendars.refresh()
     monkeypatch.setattr(prompts, "school_now", lambda: NOW)
     system = prompts.rag_messages("is there school next monday?", [], None)[0][0]["content"]
-    assert "Today is Monday, October 5, 2026." in system
+    assert "Today is Monday, October 5, 2026, and it's 9:30 AM (school time)." in system
     assert "The next two weeks on the official school calendars" in system and "Mon Oct 12, 2026: NO SCHOOL" in system
 
 

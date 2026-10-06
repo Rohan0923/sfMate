@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, config, llm, prompts, rag
+from . import announcements, auth, calendars, config, llm, prompts, rag, schedule
 from .db import announcement_summaries, engine, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -45,12 +45,18 @@ def sse(obj):
 
 
 def stream_response(sources, pieces, on_complete=None):
-    """Server-Sent Events: {sources}, then {delta} text as it's written, then {done} (or {error})."""
+    """Server-Sent Events: {sources}, then {delta} text as it's written, then {done} (or {error}).
+    `pieces` may also yield dicts (like {"sources": [...]}) to send as they are."""
     def events():
-        yield sse({"sources": sources})
+        yield ": ok\n\n"   # comment line: bytes on the wire right away, even while the model is still waking up
+        if sources is not None:
+            yield sse({"sources": sources})
         parts = []
         try:
             for piece in pieces:
+                if isinstance(piece, dict):
+                    yield sse(piece)
+                    continue
                 parts.append(piece)
                 yield sse({"delta": piece})
             if on_complete:
@@ -251,9 +257,23 @@ def chat(req: ChatRequest, user=Depends(auth.current_user)):
     use_one_message(user["username"])
     history = [{"role": m["role"], "content": str(m["content"])[:4000]}
                for m in req.history if m.get("role") in ("user", "assistant")][-6:]   # last 3 exchanges
-    messages, hits = prompts.rag_messages(message, history, user["profile"])
-    sources = [{"n": i, "title": c["title"], "url": c["url"]} for i, (c, _) in enumerate(hits, 1)]
-    return stream_response(sources, llm.stream_chat(messages))
+    return stream_response(None, answer(message, history, user["profile"]))
+
+
+def answer(message, history, profile):
+    """Scheduling questions: calendars only, double-checked first. Everything else: search all sources."""
+    now = prompts.school_now()
+    plan = schedule.plan(message, history, now)
+    if plan:
+        notes = llm.complete(schedule.check_messages(plan, message, now), max_tokens=400, temperature=0)
+        if plan.time_frame or not schedule.found_nothing(notes):
+            yield {"sources": plan.sources}
+            yield from llm.stream_chat(schedule.answer_messages(plan, notes, message, history, profile, now))
+            return
+        log.info("nothing on the calendars for %r; answering from all sources", message[:80])
+    messages, hits = prompts.rag_messages(message, history, profile, now=now)
+    yield {"sources": [{"n": i, "title": c["title"], "url": c["url"]} for i, (c, _) in enumerate(hits, 1)]}
+    yield from llm.stream_chat(messages)
 
 
 # ---------- Daily Announcements ----------

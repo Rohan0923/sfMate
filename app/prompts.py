@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import calendars, config, rag
+from . import calendars, config, dates, rag
 
 SFMATE_PERSONA = ("You are sfMate, high school general advisor. You are to talk like a teenager: "
                   "with slang but still respectful and with nothing too corny. "
@@ -39,18 +39,20 @@ def student_blurb(profile):
             "but don't recite it back unprompted.")
 
 
-def rag_messages(question, history, profile, k=5):
+def rag_messages(question, history, profile, k=5, now=None):
     """System prompt + prior turns + retrieved context. Returns (messages, hits)."""
     prev_user = [m["content"] for m in history if m["role"] == "user"][-1:]   # helps follow-ups like "what about juniors?"
     hits = rag.retrieve(" ".join(prev_user + [question]), k)
     context = "\n\n".join(
         f"[{i}] {c['title']}" + (f" ({c['url']})" if c["url"] else "") + f"\n{c['text']}" for i, (c, _) in enumerate(hits, 1)
     )
-    today = school_now()
+    today = now or school_now()
     upcoming = calendars.upcoming_text(today)
+    time_frame = dates.resolve(question, today.date())
     system = (
         SFMATE_PERSONA + "\n\n"
-        f"Today is {today:%A, %B} {today.day}, {today.year}. "
+        f"Today is {today:%A, %B} {today.day}, {today.year}, and it's {today:%I:%M %p}".replace(" 0", " ") + " (school time). "
+        + (f"The question's time frame, already worked out: {time_frame.describe()}. " if time_frame else "") +
         "Answer questions about Saint Francis High School using ONLY the context below, which comes from "
         "sfhs.com, the official Student-Parent Handbook, the 2026-27 Course Scheduling Guide, recent Daily "
         "Announcements emails, and the official school calendars. For rules and policies, the Handbook is the "
