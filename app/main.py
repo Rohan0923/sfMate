@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, config, llm, prompts, rag
+from . import announcements, auth, calendars, config, llm, prompts, rag
 from .db import announcement_summaries, engine, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -26,8 +26,10 @@ async def lifespan(app):
     rag.load_index()
     threading.Thread(target=rag.embedder, daemon=True).start()   # load the search model now, not on the first question
     announcements.start()
+    calendars.start()
     yield
     announcements.stop()
+    calendars.stop()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)

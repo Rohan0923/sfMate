@@ -52,3 +52,15 @@ ANNOUNCE_POLL_MINUTES = float(_env("ANNOUNCE_POLL_MINUTES", "5"))
 ANNOUNCE_HOURS = tuple(int(h) for h in _env("ANNOUNCE_HOURS", "7-11").split("-"))   # check from 7:00 until 11:00
 ANNOUNCE_WEEKDAYS_ONLY = _env("ANNOUNCE_WEEKDAYS_ONLY", "true").lower() == "true"
 SCHOOL_TIMEZONE = _env("SCHOOL_TIMEZONE", "America/Los_Angeles")
+
+# School calendars: public iCal (.ics) feeds, comma-separated. Default: SFHS Activities & Events, SFHS School Schedule
+_SFHS_CALENDARS = (
+    "https://calendar.google.com/calendar/ical/c_f262940ce7d5cc680ca47b0e9632365ec5685a98b219bc6305a4c75287286004"
+    "%40group.calendar.google.com/public/basic.ics,"
+    "https://calendar.google.com/calendar/ical/c_499267f7da4e582cf1204186abd13af7b0e2369be2d471856f5af64f3a9a0454"
+    "%40group.calendar.google.com/public/basic.ics")
+CALENDAR_ICS_URLS = [u.strip().replace("webcal://", "https://", 1)
+                     for u in _env("CALENDAR_ICS_URLS", _SFHS_CALENDARS).split(",") if u.strip()]
+CALENDAR_REFRESH_MINUTES = float(_env("CALENDAR_REFRESH_MINUTES", "30"))
+CALENDAR_PROMPT_DAYS = int(_env("CALENDAR_PROMPT_DAYS", "14"))           # how far ahead the model always sees
+CALENDAR_PROMPT_MAX_EVENTS = int(_env("CALENDAR_PROMPT_MAX_EVENTS", "40"))

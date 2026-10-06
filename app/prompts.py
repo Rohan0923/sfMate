@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import config, rag
+from . import calendars, config, rag
 
 SFMATE_PERSONA = ("You are sfMate, high school general advisor. You are to talk like a teenager: "
                   "with slang but still respectful and with nothing too corny. "
@@ -47,16 +47,21 @@ def rag_messages(question, history, profile, k=5):
         f"[{i}] {c['title']}" + (f" ({c['url']})" if c["url"] else "") + f"\n{c['text']}" for i, (c, _) in enumerate(hits, 1)
     )
     today = school_now()
+    upcoming = calendars.upcoming_text(today)
     system = (
         SFMATE_PERSONA + "\n\n"
         f"Today is {today:%A, %B} {today.day}, {today.year}. "
         "Answer questions about Saint Francis High School using ONLY the context below, which comes from "
-        "sfhs.com, the official Student-Parent Handbook, the 2026-27 Course Scheduling Guide, and recent Daily "
-        "Announcements emails. For rules and policies, the Handbook is the authority; for courses, prerequisites, "
-        "and graduation requirements, the Course Scheduling Guide is. Each Daily Announcements email is dated: "
+        "sfhs.com, the official Student-Parent Handbook, the 2026-27 Course Scheduling Guide, recent Daily "
+        "Announcements emails, and the official school calendars. For rules and policies, the Handbook is the "
+        "authority; for courses, prerequisites, and graduation requirements, the Course Scheduling Guide is; for "
+        "dates, schedules, and days off, the school calendars are. Each Daily Announcements email is dated: "
         "'today' or 'tomorrow' inside one is relative to that email's date, not necessarily to today. "
         "Cite sources inline like [1]. If the context doesn't contain the answer, say you don't know "
         "and suggest checking sfhs.com or asking the Deans' office."
+        + (f"\n\nThe next two weeks on the official school calendars (the School Schedule calendar names each "
+           f"day's bell schedule, like B1 or G2; cite this list as \"the school calendar\"):\n{upcoming}"
+           if upcoming else "")
         + student_blurb(profile)
     )
     messages = [{"role": "system", "content": system}, *history,

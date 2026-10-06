@@ -11,6 +11,8 @@ sentence-transformers==6.1.0
 torch==2.14.1
 numpy==2.5.3
 beautifulsoup4==4.15.0
+icalendar==7.3.0
+recurring-ical-events==3.8.2
 google-auth==2.59.1
 requests==2.34.2
 python-dotenv==1.2.4

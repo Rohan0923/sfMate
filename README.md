@@ -8,6 +8,7 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
                 ├─ pages: home, sign up / log in, setup, chat
                 ├─ accounts (@sfhs.com + emailed code), profiles, daily limits ──► Postgres
                 ├─ search over sfhs.com + Handbook + Course Guide (prebuilt, data/) + Daily Announcements
+                │    + the school calendars (Activities & Events, School Schedule; refreshed every 30 min)
                 ├─ reads Daily Announcements / sends sign-up codes ──► sfMate Gmail
                 └─ asks the model ──► RunPod Serverless (vLLM, Qwen2.5-32B), scales to zero
 ```
@@ -119,7 +120,7 @@ model client against a fake RunPod.
 2. Run `.venv/bin/python -m scripts.build_index --refresh` (about 3–5 minutes).
 3. Commit `data/` and push.
 
-Daily Announcements don't need this: they're read from Gmail live.
+Daily Announcements and the school calendars don't need this: they're read live.
 
 **Settings** (Render → sfmate → Environment; saving restarts the server):
 
@@ -131,6 +132,8 @@ Daily Announcements don't need this: they're read from Gmail live.
 | `ANNOUNCE_SENDERS` | `@sfhs.com` | Which senders count as real announcements (comma-separated) |
 | `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements (school time) |
 | `GOOGLE_CLIENT_ID` | blank | Turns on "Continue with Google" (school accounts only) |
+| `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
+| `CALENDAR_PROMPT_DAYS` | `14` | How many days ahead sfMate always sees (beyond that, it searches) |
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
 site's address (for example `https://sfmate.onrender.com`) under **Authorized JavaScript origins**, and set
@@ -145,6 +148,8 @@ site's address (for example `https://sfmate.onrender.com`) under **Authorized Ja
   a break (1–3 minutes). If it never answers, check RunPod's endpoint page (are workers starting? any credit left?).
 - **Codes not arriving:** check spam. The logs say "couldn't send code" if Gmail rejected the app password.
 - **Announcements not showing:** the logs say "skipped an email from …" if the sender isn't in `ANNOUNCE_SENDERS`.
+- **Calendar events missing:** the logs say "calendar N failed to refresh" if a feed is down; sfMate keeps the
+  last copy it got and tries again in 30 minutes.
 - **Keep the web service at 1 instance.** The announcements checker and login throttling live in memory.
 
 ## What's where
@@ -156,6 +161,7 @@ app/llm.py            RunPod/vLLM client (streaming, cold-start retries)
 app/rag.py            search index + query embedding
 app/prompts.py        persona and every instruction the model gets
 app/announcements.py  Gmail reader + schedule
+app/calendars.py      school calendar feeds
 app/db.py             database tables
 app/static/           the four pages
 scripts/build_index.py  crawls the site + PDFs, builds data/
