@@ -44,7 +44,7 @@ def _week_start(d):
     return d - timedelta(days=d.weekday())
 
 
-def _year_for(month, day, today):
+def year_for(month, day, today):
     """A date without a year: this year, unless that's more than two months ago (then it means next year)."""
     try:
         d = date(today.year, month, day)
@@ -78,7 +78,7 @@ def _rules(today):
     def explicit_date(m):
         month = MONTHS[m["mon"]]
         try:
-            d = date(int(m["year"]), month, int(m["day"])) if m["year"] else _year_for(month, int(m["day"]), today)
+            d = date(int(m["year"]), month, int(m["day"])) if m["year"] else year_for(month, int(m["day"]), today)
         except ValueError:   # "feb 30"
             return None
         return (d, d) if d else None
@@ -88,7 +88,7 @@ def _rules(today):
         if not (1 <= month <= 12 and 1 <= day <= 31):
             return None
         try:
-            d = date(int(m["y"]) + (2000 if len(m["y"]) == 2 else 0), month, day) if m["y"] else _year_for(month, day, today)
+            d = date(int(m["y"]) + (2000 if len(m["y"]) == 2 else 0), month, day) if m["y"] else year_for(month, day, today)
         except ValueError:
             return None
         return (d, d) if d else None

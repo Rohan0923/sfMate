@@ -64,3 +64,7 @@ CALENDAR_ICS_URLS = [u.strip().replace("webcal://", "https://", 1)
 CALENDAR_REFRESH_MINUTES = float(_env("CALENDAR_REFRESH_MINUTES", "30"))
 CALENDAR_PROMPT_DAYS = int(_env("CALENDAR_PROMPT_DAYS", "14"))           # how far ahead the model always sees
 CALENDAR_PROMPT_MAX_EVENTS = int(_env("CALENDAR_PROMPT_MAX_EVENTS", "40"))
+
+# Lancer Cafe menu page (read live); "" turns it off
+MENU_URL = _env("MENU_URL", "https://www.sfhs.com/lancer-cafe")
+MENU_REFRESH_MINUTES = float(_env("MENU_REFRESH_MINUTES", "120"))

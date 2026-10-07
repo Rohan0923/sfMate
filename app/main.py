@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, config, llm, prompts, rag, schedule
+from . import announcements, auth, calendars, config, llm, menu, prompts, rag, schedule
 from .db import announcement_summaries, engine, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -27,9 +27,11 @@ async def lifespan(app):
     threading.Thread(target=rag.embedder, daemon=True).start()   # load the search model now, not on the first question
     announcements.start()
     calendars.start()
+    menu.start()
     yield
     announcements.stop()
     calendars.stop()
+    menu.stop()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -261,8 +263,14 @@ def chat(req: ChatRequest, user=Depends(auth.current_user)):
 
 
 def answer(message, history, profile):
-    """Scheduling questions: calendars only, double-checked first. Everything else: search all sources."""
+    """Food questions: the cafe menu for the exact day. Scheduling questions: calendars only, double-checked first.
+    Everything else: search all sources."""
     now = prompts.school_now()
+    food = menu.plan(message, history, now)
+    if food:
+        yield {"sources": food.sources}
+        yield from llm.stream_chat(menu.messages(food, message, history, profile, now))
+        return
     plan = schedule.plan(message, history, now)
     if plan:
         notes = llm.complete(schedule.check_messages(plan, message, now), max_tokens=400, temperature=0)

@@ -6,13 +6,13 @@ import tempfile
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ.update(DATABASE_URL=f"sqlite:///{_db.name}", APP_ENV="development",
                   GMAIL_ADDRESS="", GMAIL_APP_PASSWORD="", GOOGLE_CLIENT_ID="", DAILY_MESSAGE_LIMIT="5",
-                  CALENDAR_ICS_URLS="")   # no network in tests; test_calendars.py feeds in its own
+                  CALENDAR_ICS_URLS="", MENU_URL="")   # no network in tests; the calendar and menu tests feed in their own
 
 import numpy as np   # noqa: E402
 import pytest   # noqa: E402
 import sqlalchemy as sa   # noqa: E402
 
-from app import auth, calendars, db, llm, mailer, rag   # noqa: E402
+from app import auth, calendars, db, llm, mailer, menu, rag   # noqa: E402
 
 
 class FakeEmbedder:
@@ -50,6 +50,7 @@ def fresh_state(monkeypatch):
     rag.doc_embs = rag.embed([f"{d['title']}\n{d['text']}" for d in rag.docs])
     rag.EXTRA_SOURCES.clear()
     calendars.events, calendars._feeds, calendars._emb_cache, calendars._searchable = [], {}, {}, ([], None)
+    menu.sections, menu.fetched_at = [], None
     yield
 
 
