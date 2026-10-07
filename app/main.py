@@ -5,6 +5,7 @@ API:    /auth/*  accounts    /profile    /welcome    /chat (streamed)    /announ
 """
 import json
 import logging
+import queue
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -14,7 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, config, llm, menu, prompts, rag, schedule
+from . import announcements, auth, calendars, config, dates, llm, menu, prompts, rag, schedule
 from .db import announcement_summaries, engine, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -46,16 +47,57 @@ def sse(obj):
     return f"data: {json.dumps(obj)}\n\n"
 
 
+QUIET_SECONDS = 10   # no word from the model for this long before the answer starts: it's probably waking up
+WAITING_STATUS = "Still working… if sfMate's brain was asleep, waking it up can take a minute or two."
+_QUIET = object()
+
+
+def _watch(pieces, quiet_seconds):
+    """Runs `pieces` in a background thread and yields its items, plus _QUIET whenever nothing has come for a while."""
+    q, done, stop = queue.Queue(), object(), threading.Event()
+
+    def worker():
+        try:
+            for item in pieces:
+                if stop.is_set():
+                    break
+                q.put((None, item))
+        except BaseException as e:
+            q.put((e, None))
+        q.put((None, done))
+
+    threading.Thread(target=worker, daemon=True, name="answer").start()
+    try:
+        while True:
+            try:
+                err, item = q.get(timeout=quiet_seconds)
+            except queue.Empty:
+                yield _QUIET
+                continue
+            if err:
+                raise err
+            if item is done:
+                return
+            yield item
+    finally:
+        stop.set()   # the student left or hit stop: let the model call wind down
+
+
 def stream_response(sources, pieces, on_complete=None):
     """Server-Sent Events: {sources}, then {delta} text as it's written, then {done} (or {error}).
-    `pieces` may also yield dicts (like {"sources": [...]}) to send as they are."""
+    `pieces` may also yield dicts ({"status": ...}, {"sources": [...]}, {"checked": [...]}) to send as they are."""
     def events():
         yield ": ok\n\n"   # comment line: bytes on the wire right away, even while the model is still waking up
         if sources is not None:
             yield sse({"sources": sources})
-        parts = []
+        parts, told_waiting = [], False
         try:
-            for piece in pieces:
+            for piece in _watch(pieces, QUIET_SECONDS):
+                if piece is _QUIET:
+                    if not parts and not told_waiting:
+                        told_waiting = True
+                        yield sse({"status": WAITING_STATUS})
+                    continue
                 if isinstance(piece, dict):
                     yield sse(piece)
                     continue
@@ -266,22 +308,55 @@ def answer(message, history, profile):
     """Food questions: the cafe menu for the exact day. Scheduling questions: calendars only, double-checked first.
     Everything else: search all sources."""
     now = prompts.school_now()
+    checked = []   # "How I checked this", shown under the answer
+
+    def frame(time_frame):
+        return [f"Worked out the time frame: {time_frame.describe()}"] if time_frame else []
+
     food = menu.plan(message, history, now)
     if food:
+        when = food.time_frame.phrase if food.time_frame else "today"
+        yield {"status": f"Looking up the Lancer Cafe menu for {when}…"}
+        checked += frame(food.time_frame) or ["No day named: looked at today and the next day with a menu"]
+        checked.append(food.looked_at)
         yield {"sources": food.sources}
+        yield {"status": "Writing the answer…"}
         yield from llm.stream_chat(menu.messages(food, message, history, profile, now))
+        yield {"checked": checked}
         return
+
     plan = schedule.plan(message, history, now)
     if plan:
+        if plan.time_frame:
+            yield {"status": f"Working out the dates: {plan.time_frame.describe()}"}
+        yield {"status": "Checking the school calendars…"}
+        checked += frame(plan.time_frame) or ["No dates named: looked at the next two weeks plus matching events"]
+        checked.append(plan.looked_at)
+        yield {"sources": plan.sources}
+        yield {"status": "Double-checking the calendar entries…"}
         notes = llm.complete(schedule.check_messages(plan, message, now), max_tokens=400, temperature=0)
         if plan.time_frame or not schedule.found_nothing(notes):
-            yield {"sources": plan.sources}
+            checked.append("Double-check: nothing on the calendars matches" if schedule.found_nothing(notes)
+                           else f"Double-check notes:\n{notes.strip()[:800]}")
+            yield {"status": "Writing the answer…"}
             yield from llm.stream_chat(schedule.answer_messages(plan, notes, message, history, profile, now))
+            yield {"checked": checked}
             return
         log.info("nothing on the calendars for %r; answering from all sources", message[:80])
+        checked.append("Double-check: nothing on the calendars matches, so searched all sources instead")
+        yield {"status": "Nothing on the calendars, so searching all of sfMate's sources…"}
+    else:
+        yield {"status": "Searching sfhs.com, the Handbook, the Course Guide, and recent announcements…"}
+
     messages, hits = prompts.rag_messages(message, history, profile, now=now)
+    if not plan:
+        checked += frame(dates.resolve(message, now.date()))
+    checked.append(f"Searched sfhs.com, the Handbook, the Course Guide, Daily Announcements, and the calendars; "
+                   f"used the {len(hits)} closest matches (see Sources)")
     yield {"sources": [{"n": i, "title": c["title"], "url": c["url"]} for i, (c, _) in enumerate(hits, 1)]}
+    yield {"status": "Writing the answer…"}
     yield from llm.stream_chat(messages)
+    yield {"checked": checked}
 
 
 # ---------- Daily Announcements ----------

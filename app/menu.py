@@ -144,6 +144,7 @@ class Plan:
     time_frame: dates.DateRange | None
     agenda: str
     sources: list
+    looked_at: str   # for "How I checked this"
 
 
 def _menu_days():
@@ -163,7 +164,13 @@ def plan(question, history, now):
                 for i in range(min((time_frame.end - time_frame.start).days + 1, MAX_DAYS))]
     else:   # no day named: today, plus the next day with a menu (for "what's for lunch" asked after school)
         days = [today] + [d for d in _menu_days() if d > today][:1]
-    return Plan(time_frame, build_agenda(days, today), [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}])
+    posted = {d for s in sections for d in s.days}
+    found = ", ".join(f"{d:%a %b} {d.day}" for d in days if d in posted) or "none of those days"
+    missing = [f"{d:%a %b} {d.day}" for d in days if d not in posted]
+    looked_at = (f"Read the Lancer Cafe menu (page checked {fetched_at:%a %b} {fetched_at.day}, {fetched_at:%I:%M %p}). "
+                 .replace(" 0", " ") + f"Menu posted for: {found}" + (f". Not posted: {', '.join(missing)}" if missing else ""))
+    return Plan(time_frame, build_agenda(days, today),
+                [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}], looked_at)
 
 
 def _tag(d, today):
