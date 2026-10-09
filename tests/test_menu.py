@@ -4,7 +4,7 @@ import pytest
 import requests
 
 from app import config, menu, prompts
-from tests.test_app import first, sse_events, statuses
+from tests.test_app import sse_events
 
 TZ = menu.SCHOOL_TZ
 NOW = datetime(2026, 10, 6, 11, 0, tzinfo=TZ)   # Tuesday
@@ -115,11 +115,7 @@ def test_chat_answers_from_the_menu(loaded, monkeypatch, client, make_user, fake
     h = make_user()
     fake_llm.reply = ["Wednesday, Oct 7: ", "Bianca Pizza ($5.50) [1]."]
     events = sse_events(client.post("/chat", json={"message": "what's for lunch tomorrow?"}, headers=h).text)
-    assert first(events, "sources") == [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
-    assert statuses(events) == ["Looking up the Lancer Cafe menu for tomorrow…", "Writing the answer…"]
-    assert first(events, "checked") == [
-        'Worked out the time frame: "tomorrow" = Wednesday, October 7, 2026',
-        "Read the Lancer Cafe menu (page checked Tue Oct 6, 11:00 AM). Menu posted for: Wed Oct 7"]
+    assert events[0] == {"sources": [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}]}
     assert "".join(e.get("delta", "") for e in events) == "Wednesday, Oct 7: Bianca Pizza ($5.50) [1]."
     (msgs,) = fake_llm.calls   # one model call: no calendar check, no search
     assert menu.INSTRUCTIONS in msgs[0]["content"]

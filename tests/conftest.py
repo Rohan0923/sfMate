@@ -2,7 +2,6 @@
 import os
 import re
 import tempfile
-import zlib
 
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ.update(DATABASE_URL=f"sqlite:///{_db.name}", APP_ENV="development",
@@ -22,7 +21,7 @@ class FakeEmbedder:
         out = np.zeros((len(texts), 768), dtype=np.float32)
         for i, t in enumerate(texts):
             for w in re.findall(r"[a-z]+", t.lower()):
-                out[i, zlib.crc32(w.encode()) % 768] += 1   # not hash(): that changes every run
+                out[i, hash(w) % 768] += 1
         return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
 
 

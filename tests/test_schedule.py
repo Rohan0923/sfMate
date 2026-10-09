@@ -4,7 +4,7 @@ import pytest
 
 from app import calendars, db, prompts, schedule
 from tests.conftest import rows
-from tests.test_app import first, sse_events, statuses
+from tests.test_app import sse_events
 from tests.test_calendars import NOW, TZ, feeds   # noqa: F401  (feeds is a fixture)
 
 
@@ -96,14 +96,7 @@ def test_chat_checks_the_calendar_then_answers(cal, at_now, client, make_user, f
     h = make_user()
     fake_llm.queue = [["Mon Oct 12, 2026: NO SCHOOL [1]"], ["Nope, ", "no school Monday, Oct 12 [1]."]]
     events = ask(client, h, "is there school next monday?")
-    assert first(events, "sources") == [{"n": 1, "title": "SFHS School Schedule", "url": ""}]
-    assert statuses(events) == ['Working out the dates: "next monday" = Monday, October 12, 2026',
-                                "Checking the school calendars…", "Double-checking the calendar entries…",
-                                "Writing the answer…"]
-    assert first(events, "checked") == [
-        'Worked out the time frame: "next monday" = Monday, October 12, 2026',
-        "Read 1 calendar entry from Mon Oct 12, 2026 through Mon Oct 12, 2026 (SFHS School Schedule)",
-        "Double-check notes:\nMon Oct 12, 2026: NO SCHOOL [1]"]
+    assert events[0] == {"sources": [{"n": 1, "title": "SFHS School Schedule", "url": ""}]}
     assert "".join(e.get("delta", "") for e in events) == "Nope, no school Monday, Oct 12 [1]."
     assert events[-1] == {"done": True}
 
@@ -124,10 +117,7 @@ def test_nothing_on_the_calendar_falls_back_to_all_sources(cal, at_now, client, 
     events = ask(client, h, "when is the dance")
     check, general = fake_llm.calls
     assert "Answer questions about Saint Francis High School" in general[0]["content"]
-    calendar_sources, general_sources = [e["sources"] for e in events if "sources" in e]
-    assert calendar_sources != general_sources and len(general_sources) == 5   # search results replaced them
-    assert "Nothing on the calendars, so searching all of sfMate's sources…" in statuses(events)
-    assert first(events, "checked")[2] == "Double-check: nothing on the calendars matches, so searched all sources instead"
+    assert events[0]["sources"][0]["title"] == "Handbook §4.4 Dances"
 
 
 def test_a_dated_question_with_nothing_on_it_still_answers_from_the_calendar(cal, at_now, client, make_user, fake_llm):

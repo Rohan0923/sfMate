@@ -32,7 +32,6 @@ class Plan:
     time_frame: dates.DateRange | None   # None: the question names an event, not dates
     agenda: str
     sources: list
-    looked_at: str   # for "How I checked this"
 
 
 def wants_schedule(text, today):
@@ -47,8 +46,8 @@ def plan(question, history, now):
     if not (wants_schedule(question, today) or (follow_up and not POLICY_SIGNS.search(question))):
         return None
     time_frame = dates.resolve(question, today) or (dates.resolve(prev, today) if follow_up else None)
-    agenda, sources, looked_at = build_agenda(question, time_frame, now)
-    return Plan(time_frame, agenda, sources, looked_at)
+    agenda, sources = build_agenda(question, time_frame, now)
+    return Plan(time_frame, agenda, sources)
 
 
 # ---------- the agenda the model reads ----------
@@ -137,10 +136,7 @@ def build_agenda(question, time_frame, now):
             if ev["location"]:
                 line += f" @ {ev['location']}"
             out.append(f"{line} [{num[ev['calendar']]}]{past}{_details(ev)}")
-    looked_at = (f"Read {len(in_window)} calendar entr{'y' if len(in_window) == 1 else 'ies'} from {day_label(start)} "
-                 f"through {day_label(end)}" + (f", plus {len(extra)} matching entries further out" if extra else "")
-                 + (f" ({', '.join(labels)})" if labels else " (nothing on the calendars)"))
-    return "\n".join(out), sources, looked_at
+    return "\n".join(out), sources
 
 
 # ---------- the two passes ----------
