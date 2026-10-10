@@ -123,7 +123,7 @@ def test_announcements_flow(client, make_user, fake_llm, monkeypatch):
     draft = fake_llm.calls_for("draft")[-1][-1]["content"]
     assert "## Athletics" in draft and "## Happening Today" in draft
     assert "## Affinity Groups" not in draft and "Isla Jordan" not in draft
-    assert "The student's chosen topics: Happening today, Athletics." in draft
+    assert "Happening today, Athletics" not in draft   # the model gets the email's sections, not a list of topic names
     assert len(rows(db.announcement_summaries)) == 2
 
     assert client.post("/announcements/dismiss", json={"id": a["id"]}, headers=make_user("kai", "kai@sfhs.com")).json() == {"ok": True}

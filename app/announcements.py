@@ -30,24 +30,22 @@ def enabled():
 
 
 # ---------- reading one email ----------
+SHORT_EMAIL = 600   # a real Daily Announcements email is thousands of characters
 FORWARD_HEADER = re.compile(r"-{3,}\s*Forwarded message\s*-{3,}.*?\n\s*\n", re.S | re.I)   # if forwarded by hand
 BLOCK_TAGS = ["p", "div", "li", "tr", "table", "blockquote", "section", "h1", "h2", "h3", "h4", "h5", "h6"]
 
 
-HIDDEN_STYLE = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all|max-height\s*:\s*0(?![.\d])|"
-                          r"font-size\s*:\s*0(?![.\d])|opacity\s*:\s*0(?![.\d])", re.I)
 INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\u00ad\u034f\u180e"), None)
 
 
-def html_to_text(html_body, drop_hidden=False):
+def html_to_text(html_body, email=False):
     """Line breaks only where the email has them (paragraphs, list items, rows, <br>), so bold words stay inline.
-    drop_hidden: skip elements styled invisible (newsletter "preview text" and duplicate mobile versions)."""
+    Nothing is removed based on styling: templates put "invisible" styles (like font-size:0) on the cells that hold
+    the real content. Newsletter preview-text junk is zero-width characters, which clean_text strips."""
     soup = BeautifulSoup(html_body, "html.parser")
     for tag in soup(["style", "script", "head", "title"]):
         tag.decompose()
-    if drop_hidden:
-        for tag in soup.find_all(style=HIDDEN_STYLE):
-            tag.decompose()
+    if email:
         for img in soup.find_all("img"):   # section banners drawn as images: keep their heading text
             alt = " ".join((img.get("alt") or "").split())
             if alt and _heading_key(alt):
@@ -98,7 +96,7 @@ def parse_email(raw, uid):
             body = part.get_content()
         except Exception:
             continue
-        versions.append(clean_text(html_to_text(body, drop_hidden=True) if kind == "text/html" else body))
+        versions.append(clean_text(html_to_text(body, email=True) if kind == "text/html" else body))
     text = max(versions, key=len, default="")
     if len(text) < 20:
         return None, "empty"
@@ -158,6 +156,8 @@ def poll():
                 found = [k for k, _, _ in split_sections(a["text"]) if k]
                 log.info("announcement email %s from %s, %r: %d characters, sections found: %s",
                          a["label"], a.get("sender"), a.get("subject"), len(a["text"]), ", ".join(found) or "none")
+                if len(a["text"]) < SHORT_EMAIL:
+                    log.warning("announcement email %s is only %d characters: %r", a["label"], len(a["text"]), a["text"][:300])
         announcements = items
         log.info("%d new announcement email(s); %d in search", new, len(items))
 

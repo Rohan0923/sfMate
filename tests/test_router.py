@@ -143,3 +143,18 @@ def test_summaries_ignore_earlier_answers_in_the_chat(monkeypatch, client, make_
 
 def test_old_saved_summaries_are_ignored():
     assert "#v2#" in router.summary_cache_key("<a>", None)
+
+
+def test_summary_uses_the_emails_own_headings(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    email, _ = router._announcement_context("summarize the announcements", [], NOW, ["counseling", "library"], 1)
+    assert "## Guidance & Counseling Announcements" in email.text and "## Library" in email.text
+    assert "Counseling Announcements, Library Announcements" not in email.text   # no list of topic names to riff on
+    assert "WARNING" not in email.text
+
+
+def test_a_short_email_comes_with_a_warning(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY, text="for\nFriday\nOctober 9, 2026\nToday is a B2 Schedule")])
+    email, _ = router._announcement_context("summarize the announcements", [], NOW, announcements.TOPIC_KEYS, 1)
+    assert email.text.count("WARNING: the email sfMate received is only 49 characters") == 1
+    assert "Do not fill in anything else." in email.text and "Today is a B2 Schedule" in email.text

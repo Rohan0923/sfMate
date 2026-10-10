@@ -178,3 +178,15 @@ def test_the_fullest_email_of_the_day_wins(monkeypatch):
     assert announcements.for_date(NOW.date(), exact=True)[0]["id"] == "<real>"   # not the later, shorter one
     monkeypatch.setattr(announcements, "datetime", type("D", (datetime,), {"now": staticmethod(lambda tz=None: NOW)}))
     assert announcements.todays()["id"] == "<real>"
+
+
+def test_content_inside_font_size_zero_cells_is_kept():
+    """Responsive templates put font-size:0 on the cell around the columns; the content inside must survive."""
+    header, body = SAMPLE.split("Daily Announcements\t", 1)
+    rows = lambda t: "".join(f"<p>{l}</p>" for l in t.split("\n") if l.strip())
+    html = (f"<html><body><table><tr><td>{rows(header)}</td></tr></table><table><tr>"
+            f"<td style='font-size:0;line-height:0'><div style='display:inline-block;font-size:14px'>"
+            f"<p>Daily Announcements</p>{rows(body)}</div></td></tr></table></body></html>")
+    ann, _ = announcements.parse_email(html_email("Daily Announcements", NOW, html).as_bytes(), "1")
+    assert "Isla Jordan" in ann["text"] and "whiteboard polls" in ann["text"]
+    assert [k for k, _, _ in announcements.split_sections(ann["text"])] == announcements.TOPIC_KEYS

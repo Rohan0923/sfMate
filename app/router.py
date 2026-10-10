@@ -138,19 +138,26 @@ def _announcement_context(question, history, now, prefs, n, ann=None, summary=No
                         note=ANNOUNCE_DETAIL_NOTE)]
     chosen = [k for k in announcements.TOPIC_KEYS if k in prefs]
     sections = announcements.split_sections(ann["text"])
-    topics = ", ".join(announcements.TOPIC_LABELS[k] for k in chosen)
     if sum(1 for k, _, _ in sections if k and k != "daytype_birthdays") < MIN_HEADINGS:
         # the email's headings weren't recognized: never drop content, send it whole and let the model pick topics
-        body = f"(The whole email; summarize only the student's chosen topics.)\n\n{ann['text'][:SUMMARY_CHARS]}"
+        topics = ", ".join(announcements.TOPIC_LABELS[k] for k in chosen)
+        body = (f"The student only wants these topics, if the email has them: {topics}. Leave out anything else, "
+                f"and never add a topic the email doesn't cover.\n\nThe whole email:\n\n{ann['text'][:SUMMARY_CHARS]}")
         log.warning("announcement email %s: section headings not recognized, sending it whole", ann["label"])
-    else:
+    else:   # split in code: the model sees only the student's sections, under the email's own headings
         kept = [(h, b) for k, h, b in sections if k in chosen]
-        body = "\n\n".join(f"## {h}\n{b[:SECTION_CHARS]}" for h, b in kept)[:SUMMARY_CHARS] \
-            or "(none of the student's chosen topics are in this email)"
+        body = ("The parts of the email for this student's topics, under the email's own headings:\n\n"
+                + "\n\n".join(f"## {h}\n{b[:SECTION_CHARS]}" for h, b in kept)[:SUMMARY_CHARS]) if kept \
+            else "None of this student's chosen topics are in this email."
+    if len(ann["text"]) < announcements.SHORT_EMAIL:
+        body = (f"WARNING: the email sfMate received is only {len(ann['text'])} characters, so the announcements "
+                f"probably didn't come through fully. Summarize only what's below and say the full announcements "
+                f"may be missing (check your school email). Do not fill in anything else.\n\n{body}")
+        log.warning("announcement summary from %s: the email is only %d characters", ann["label"], len(ann["text"]))
     log.info("announcement summary from %s (%d characters): %d of %d sections, %d characters sent",
              ann["label"], len(ann["text"]), sum(1 for k, _, _ in sections if k in chosen), len(sections), len(body))
-    contexts = [Context("announcements", f"{head}\nThe student's chosen topics: {topics}.\n\n{body}",
-                        [{"n": n, "title": title, "url": ""}], note=ANNOUNCE_SUMMARY_NOTE)]
+    contexts = [Context("announcements", f"{head}\n\n{body}", [{"n": n, "title": title, "url": ""}],
+                        note=ANNOUNCE_SUMMARY_NOTE)]
     lunch_text, lunch_sources = menu.day_block(ann["sent"].date(), today, n + 1)
     contexts.append(Context("menu", lunch_text, lunch_sources, note="Include that day's lunch from the cafe menu."))
     return contexts
@@ -212,9 +219,10 @@ ANNOUNCE_SUMMARY_NOTE = (
     "This is this student's own summary of a Daily Announcements email, whose text is in the sources: read all of it. "
     "Start with the day type if the email says it (like 'Today is a B2 Schedule') and that day's lunch. Then, for each "
     "section of the email that's included, a short bold heading with bullets: every event, deadline, sign-up, and "
-    "meeting, with its date, time, and place. Write a heading ONLY for sections that are in the email text; skip "
-    "topics with no section silently, and never write that a topic had nothing. Skip filler like 'Check out the "
-    "details here!'. 'Today' and 'tomorrow' inside the email mean the email's date."
+    "meeting, with its date, time, and place. Use the email's own section headings, and write one ONLY for sections "
+    "that are in the email text; never write that a topic had nothing. Every name, event, room, and time must come "
+    "from the email word for word: if it isn't in the email, it doesn't go in the summary. Skip filler like 'Check "
+    "out the details here!'. 'Today' and 'tomorrow' inside the email mean the email's date."
 )
 ANNOUNCE_DETAIL_NOTE = (
     "The source is a Daily Announcements email. Answer the specific question from it, quoting details exactly, and "
