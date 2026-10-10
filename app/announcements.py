@@ -180,3 +180,81 @@ def start():
 
 def stop():
     _stop.set()
+
+
+# ---------- sections and preferences ----------
+# (key, label in Announcement Preferences, how the section's heading looks in the email). Order = email order.
+TOPICS = [
+    ("daytype_birthdays", "Day type and Birthdays", None),   # whatever comes before the first heading
+    ("highlights", "Highlights and school-wide announcements",
+     r"(this week'?s )?highlights( for students)?|school ?wide announcements"),
+    ("happening_today", "Happening today", r"happening today"),
+    ("activities", "Activities Announcements", r"activities announcements"),
+    ("clubs_events", "Clubs and Events Announcements", r"clubs (and|&) events( announcements)?"),
+    ("affinity", "Affinity Groups", r"affinity groups( announcements)?"),
+    ("mission_ministry", "Mission and Ministry", r"mission (and|&) ministry( announcements)?"),
+    ("athletics", "Athletics", r"athletics( announcements)?"),
+    ("counseling", "Counseling Announcements", r"(guidance (and|&) )?counseling( announcements)?|guidance (and|&) counseling"),
+    ("library", "Library Announcements", r"library( announcements)?"),
+]
+TOPIC_KEYS = [key for key, _, _ in TOPICS]
+TOPIC_LABELS = dict((key, label) for key, label, _ in TOPICS)
+_HEADINGS = [(key, re.compile(rf"^(?:{pattern})$")) for key, _, pattern in TOPICS if pattern]
+
+
+def _heading_key(line):
+    norm = re.sub(r"[^a-z0-9&' ]+", " ", line.lower().replace("’", "'")).strip()
+    norm = " ".join(norm.split())
+    return next((key for key, pattern in _HEADINGS if pattern.match(norm)), None)
+
+
+def split_sections(text):
+    """[(topic key, heading as written, body)] in email order. Birthdays and anything else before the first heading
+    count as "Day type and Birthdays". If no headings are recognized (the format changed), one (None, "", text)."""
+    out, key, heading, body = [], "daytype_birthdays", "Birthdays & day type", []
+    found = False
+    for line in text.split("\n"):
+        k = _heading_key(line) if len(line) <= 60 else None
+        if k:
+            found = True
+            out.append((key, heading, "\n".join(body).strip()))
+            key, heading, body = k, line.strip(), []
+        else:
+            body.append(line)
+    out.append((key, heading, "\n".join(body).strip()))
+    if not found:
+        return [(None, "", text.strip())]
+    return [(k, h, b) for k, h, b in out if b]
+
+
+def for_date(day, exact):
+    """(email, note): the latest email sent that day. If there's none and no day was asked for specifically,
+    the most recent one before it, with a note saying so."""
+    same_day = [a for a in announcements if a["sent"].date() == day]
+    if same_day:
+        return same_day[-1], ""
+    if exact:
+        return None, ""
+    earlier = [a for a in announcements if a["sent"].date() < day]
+    if not earlier:
+        return None, ""
+    return earlier[-1], f"No Daily Announcements email has come in for that day yet; this is the most recent one, from {earlier[-1]['label']}."
+
+
+SUMMARY_SIGNS = re.compile(
+    r"summar|recap|overview|tl;?dr|rundown|catch me up|what did i miss|anything (new|important|interesting)|"
+    r"what'?s (in|on) (the |today'?s |this morning'?s )?announcements|"
+    r"what (are|were) (the |today'?s |yesterday'?s )?(daily )?announcements", re.I)
+
+
+FILLER = set("the a an daily announcement announcements what what's whats are were was is in on for any new show me "
+             "give read tell get today today's todays yesterday yesterday's this morning morning's s".split())
+DAY_WORDS = re.compile(r"^(mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?('s)?$")
+
+
+def wants_summary(question):
+    """Summaries use the student's Announcement Preferences; specific questions read the whole email.
+    "today's announcements?" is a summary; "did the announcements mention DECA?" is specific."""
+    words = re.findall(r"[a-z']+", question.lower())
+    rest = [w for w in words if w not in FILLER and not DAY_WORDS.match(w)]
+    return bool(SUMMARY_SIGNS.search(question)) or (any(w.startswith("announcement") for w in words) and not rest)

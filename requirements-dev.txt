@@ -1,5 +1,4 @@
 # Extra tools for your Mac: building the search index and running the tests.
 -r requirements.txt
 pymupdf==1.28.2
-trafilatura==2.3.0
 pytest==9.1.1

@@ -65,63 +65,54 @@ def test_dates_without_a_year():
     assert date(2027, 1, 4) in lunch.days   # January, seen in December, is next year
 
 
-@pytest.mark.parametrize("question", [
-    "what's for lunch today?", "is there pizza friday", "what's for breakfast tomorrow", "what's the vegetarian option",
-    "what time is breakfast", "is the snack bar open after school",
-])
-def test_food_questions_take_the_menu_route(loaded, question):
-    assert menu.plan(question, [], NOW) is not None
+def test_no_menu_loaded_says_so():
+    text, sources = menu.context("what's for lunch today?", [], NOW)
+    assert "not available right now" in text and sources[0]["title"] == "Lancer Cafe menu"
 
 
-@pytest.mark.parametrize("question", [
-    "are the cookies nut free?", "how do I add money to my MySchoolBucks account", "is there school tomorrow",
-    "what's the dress code",
-])
-def test_other_questions_dont(loaded, question):
-    assert menu.plan(question, [], NOW) is None
-
-
-def test_no_menu_loaded_means_no_menu_route():
-    assert menu.plan("what's for lunch today?", [], NOW) is None
-
-
-def test_agenda_for_a_named_day(loaded):
-    agenda = menu.plan("is there pizza friday", [], NOW).agenda
-    assert "Friday, October 9, 2026\n  Breakfast (Chef’s Table Features):\n    - Buttermilk Waffles\n  Lunch:\n    - Margarita Pizza Individual — $5.50" in agenda
-    assert "Tuesday, October 6" not in agenda   # only the day asked about
-    assert "  Lunch: Hours — varies depending on day/schedule\n    Recurring Menu Items: Fries - $3.00; Acai Bowl - $6.50" in agenda
+def test_context_for_a_named_day(loaded):
+    text, _ = menu.context("is there pizza friday", [], NOW)
+    assert text.startswith('Time frame of the question: "friday" = Friday, October 9, 2026.')
+    assert "Friday, October 9, 2026\n  Breakfast (Chef’s Table Features):\n    - Buttermilk Waffles\n  Lunch:\n    - Margarita Pizza Individual — $5.50" in text
+    assert "Tuesday, October 6" not in text   # only the day asked about
+    assert "  Lunch: Hours — varies depending on day/schedule\n    Recurring Menu Items: Fries - $3.00; Acai Bowl - $6.50" in text
 
 
 def test_no_day_named_means_today_and_the_next_menu_day(loaded):
-    agenda = menu.plan("what's for lunch?", [], NOW).agenda
-    assert "Tuesday, October 6, 2026 (TODAY)" in agenda and "Wednesday, October 7, 2026 (TOMORROW)" in agenda
-    assert "Friday, October 9" not in agenda
+    text, _ = menu.context("what's for lunch?", [], NOW)
+    assert "Tuesday, October 6, 2026 (TODAY)" in text and "Wednesday, October 7, 2026 (TOMORROW)" in text
+    assert "Friday, October 9" not in text
 
 
 def test_days_without_a_menu_say_so(loaded):
-    agenda = menu.plan("what's for lunch this week", [], NOW).agenda
-    assert "Thursday, October 8, 2026\n  no menu posted for this day" in agenda
-    assert "Saturday, October 10, 2026\n  no menu posted for this day (weekend)" in agenda
+    text, _ = menu.context("what's for lunch this week", [], NOW)
+    assert "Thursday, October 8, 2026\n  no menu posted for this day" in text
+    assert "Saturday, October 10, 2026\n  no menu posted for this day (weekend)" in text
 
 
-def test_follow_ups(loaded):
-    history = [{"role": "user", "content": "what's for lunch today?"}, {"role": "assistant", "content": "Pizza [1]"}]
-    p = menu.plan("and friday?", history, NOW)
-    assert p and p.time_frame.start == date(2026, 10, 9)
+def test_follow_ups_keep_the_day(loaded):
+    history = [{"role": "user", "content": "what's for lunch friday?"}, {"role": "assistant", "content": "Pizza [1]"}]
+    assert "Friday, October 9, 2026" in menu.context("and breakfast?", history, NOW)[0]
 
 
-def test_chat_answers_from_the_menu(loaded, monkeypatch, client, make_user, fake_llm):
+def test_one_day_block_for_summaries(loaded):
+    text, sources = menu.day_block(date(2026, 10, 7), NOW.date(), first_n=2)
+    assert text.startswith("[2] Lancer Cafe menu") and "Bianca Pizza Individual — $5.50" in text and "Every day" not in text
+    assert sources == [{"n": 2, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
+
+
+def test_chat_answers_from_the_menu_only(loaded, monkeypatch, client, make_user, fake_llm):
     monkeypatch.setattr(prompts, "school_now", lambda: NOW)
     h = make_user()
-    fake_llm.reply = ["Wednesday, Oct 7: ", "Bianca Pizza ($5.50) [1]."]
+    fake_llm.category, fake_llm.reply = "menu", ["Wednesday, Oct 7: ", "Bianca Pizza ($5.50) [1]."]
     events = sse_events(client.post("/chat", json={"message": "what's for lunch tomorrow?"}, headers=h).text)
     assert events[0] == {"sources": [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}]}
     assert "".join(e.get("delta", "") for e in events) == "Wednesday, Oct 7: Bianca Pizza ($5.50) [1]."
-    (msgs,) = fake_llm.calls   # one model call: no calendar check, no search
-    assert menu.INSTRUCTIONS in msgs[0]["content"]
-    assert msgs[-1]["content"].startswith('Right now: Tuesday, October 6, 2026, 11:00 AM (school time).\n'
-                                         'Time frame of the question: "tomorrow" = Wednesday, October 7, 2026.')
-    assert "    - Bianca Pizza Individual — $5.50" in msgs[-1]["content"]
+    draft = fake_llm.calls_for("draft")[0]
+    assert menu.NOTES in draft[0]["content"]
+    assert draft[-1]["content"].startswith("Right now: Tuesday, October 6, 2026, 11:00 AM (school time).")
+    assert '"tomorrow" = Wednesday, October 7, 2026' in draft[-1]["content"]
+    assert "    - Bianca Pizza Individual — $5.50" in draft[-1]["content"] and "Handbook" not in draft[-1]["content"]
 
 
 def test_refresh_keeps_the_last_menu_if_the_page_breaks(monkeypatch):

@@ -86,6 +86,26 @@
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
+    /* Announcement Preferences: a dropdown of checkboxes */
+    .dropdown { border: 1px solid var(--border); border-radius: 8px; background: white; }
+    .dropdown[open] { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(178, 122, 63, 0.12); }
+    .dropdown summary {
+      list-style: none; cursor: pointer; padding: 12px 14px; font-size: 14px; color: var(--text);
+      display: flex; justify-content: space-between; align-items: center; user-select: none;
+    }
+    .dropdown summary::-webkit-details-marker { display: none; }
+    .dropdown summary::after { content: "▾"; color: var(--muted); transition: transform .2s; }
+    .dropdown[open] summary::after { transform: rotate(180deg); }
+    .dropdown .options { border-top: 1px solid var(--border); padding: 6px 4px; max-height: 260px; overflow-y: auto; }
+    .dropdown .option {
+      display: flex; align-items: center; gap: 10px; padding: 7px 10px; margin: 0; border-radius: 6px;
+      font-size: 14px; font-weight: 400; color: var(--text); cursor: pointer;
+    }
+    .dropdown .option:hover { background: var(--cream); }
+    .dropdown input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--gold); margin: 0; flex: none; }
+    .dropdown .all-row { display: flex; gap: 14px; padding: 4px 10px 6px; font-size: 12.5px; }
+    .dropdown .all-row button { background: none; border: none; padding: 0; color: var(--gold-dark); cursor: pointer; font: inherit; font-weight: 600; }
+
     @media (max-width: 480px) { .card { padding: 32px 22px; } h1 { font-size: 23px; } }
   </style>
 </head>
@@ -124,6 +144,16 @@
         <label for="food">Favorite food</label>
         <input type="text" id="food" maxlength="80" placeholder="Be honest">
         <p class="hint">(Shawarma's a foodie, this doesn't actually matter, but he wants to know.)</p>
+      </div>
+
+      <div class="form-group">
+        <label id="announceLabel">Announcement Preferences</label>
+        <details class="dropdown" id="announceDropdown" aria-labelledby="announceLabel">
+          <summary id="announceSummary">All topics</summary>
+          <div class="all-row"><button type="button" id="announceAll">Select all</button><button type="button" id="announceNone">Clear</button></div>
+          <div class="options" id="announceOptions"></div>
+        </details>
+        <p class="hint">When sfMate summarizes the Daily Announcements for you, it covers just these (plus that day's lunch).</p>
       </div>
 
       <button type="submit" class="btn-primary" id="saveBtn">Save &amp; start chatting</button>
@@ -168,6 +198,34 @@ grade.addEventListener('input', paintGrade);
 ticks.forEach((t) => (t.onclick = () => { grade.value = t.textContent; paintGrade(); }));
 paintGrade();
 
+// ---------- Announcement Preferences ----------
+const ANNOUNCE_TOPICS = [   // keys must match TOPICS in app/announcements.py
+  ['daytype_birthdays', 'Day type and Birthdays'],
+  ['highlights', 'Highlights and school-wide announcements'],
+  ['happening_today', 'Happening today'],
+  ['activities', 'Activities Announcements'],
+  ['clubs_events', 'Clubs and Events Announcements'],
+  ['affinity', 'Affinity Groups'],
+  ['mission_ministry', 'Mission and Ministry'],
+  ['athletics', 'Athletics'],
+  ['counseling', 'Counseling Announcements'],
+  ['library', 'Library Announcements'],
+];
+$('announceOptions').innerHTML = ANNOUNCE_TOPICS.map(([key, label]) =>
+  `<label class="option"><input type="checkbox" value="${key}" checked> ${label}</label>`).join('');
+const topicBoxes = () => [...$('announceOptions').querySelectorAll('input[type="checkbox"]')];
+function chosenTopics() { return topicBoxes().filter((b) => b.checked).map((b) => b.value); }
+function paintTopics() {
+  const n = chosenTopics().length;
+  $('announceSummary').textContent = n === ANNOUNCE_TOPICS.length ? 'All topics'
+    : n === 0 ? 'No topics (just lunch)' : `${n} of ${ANNOUNCE_TOPICS.length} topics`;
+}
+function setTopics(keys) { topicBoxes().forEach((b) => (b.checked = keys.includes(b.value))); paintTopics(); }
+$('announceOptions').addEventListener('change', paintTopics);
+$('announceAll').onclick = () => setTopics(ANNOUNCE_TOPICS.map(([k]) => k));
+$('announceNone').onclick = () => setTopics([]);
+paintTopics();
+
 // ---------- saving ----------
 function goToLogin() { localStorage.removeItem('sfmate_session'); location.replace(LOGIN_URL); }
 
@@ -195,6 +253,7 @@ $('setupForm').addEventListener('submit', async (e) => {
       grade: +grade.value,
       hobbies: $('hobbies').value.trim(),
       favorite_food: $('food').value.trim(),
+      announcements: chosenTopics(),
     });
     location.replace(APP_URL);
   } catch (err) {
@@ -236,6 +295,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.clas
       if (p.grade) { grade.value = p.grade; paintGrade(); }
       $('hobbies').value = p.hobbies || '';
       $('food').value = p.favorite_food || '';
+      if (Array.isArray(p.announcements)) setTopics(p.announcements);
     }
     if (me.setup_done) {   // came back from the chatbot to edit
       editing = true;

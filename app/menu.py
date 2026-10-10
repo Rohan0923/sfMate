@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
 
-from . import config, dates, prompts
+from . import config, dates
 from .announcements import clean_text, html_to_text
 
 log = logging.getLogger("sfmate.menu")
@@ -139,74 +139,71 @@ def wants_menu(question):
     return bool(FOOD_SIGNS.search(question)) and not NOT_MENU.search(question)
 
 
-@dataclass
-class Plan:
-    time_frame: dates.DateRange | None
-    agenda: str
-    sources: list
-
-
 def _menu_days():
     return sorted({d for s in sections for d in s.days})
-
-
-def plan(question, history, now):
-    """A Plan if this is a menu question and we have a menu, else None."""
-    prev = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-    follow_up = len(question.split()) <= 6 and wants_menu(prev) and not NOT_MENU.search(question)
-    if not sections or not (wants_menu(question) or follow_up):
-        return None
-    today = now.date()
-    time_frame = dates.resolve(question, today) or (dates.resolve(prev, today) if follow_up else None)
-    if time_frame:
-        days = [time_frame.start + timedelta(days=i)
-                for i in range(min((time_frame.end - time_frame.start).days + 1, MAX_DAYS))]
-    else:   # no day named: today, plus the next day with a menu (for "what's for lunch" asked after school)
-        days = [today] + [d for d in _menu_days() if d > today][:1]
-    return Plan(time_frame, build_agenda(days, today), [{"n": 1, "title": "Lancer Cafe menu", "url": config.MENU_URL}])
 
 
 def _tag(d, today):
     return {today: " (TODAY)", today + timedelta(days=1): " (TOMORROW)"}.get(d, " (already past)" if d < today else "")
 
 
-def build_agenda(days, today):
-    out = [f"Lancer Cafe menu [1] (from the cafe's page, checked {fetched_at:%a %b} {fetched_at.day} at "
-           f"{fetched_at:%I:%M %p}".replace(" 0", " ") + "):" if fetched_at else "Lancer Cafe menu [1]:"]
+def _checked_line(n):
+    when = (f", checked {fetched_at:%a %b} {fetched_at.day} at {fetched_at:%I:%M %p}".replace(" 0", " ")
+            if fetched_at else "")
+    return f"[{n}] Lancer Cafe menu (from the cafe's page{when}):"
+
+
+def _day_lines(d, today):
+    out = [f"\n{d:%A, %B} {d.day}, {d.year}{_tag(d, today)}"]
+    found = False
+    for s in sections:
+        if d in s.days:
+            heading, items = s.days[d]
+            if items:
+                found = True
+                out.append(f"  {s.name}" + (f" ({heading})" if heading else "") + ":")
+                out.extend(f"    - {item}" for item in items)
+    if not found:
+        out.append("  no menu posted for this day" + (" (weekend)" if d.weekday() >= 5 else ""))
+    return out
+
+
+def context(question, history, now, first_n=1):
+    """(text, sources): the menu for the day(s) the question is about, plus everyday items, hours, and payment."""
+    source = [{"n": first_n, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
+    if not sections:
+        return f"[{first_n}] Lancer Cafe menu: not available right now (the cafe page couldn't be read).", source
+    today = now.date()
+    prev = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+    tf = dates.resolve(question, today) or (dates.resolve(prev, today) if prev and len(question.split()) <= 6 else None)
+    if tf:
+        days = [tf.start + timedelta(days=i) for i in range(min((tf.end - tf.start).days + 1, MAX_DAYS))]
+        frame = f"Time frame of the question: {tf.describe()}."
+    else:   # no day named: today, plus the next day with a menu (for "what's for lunch" asked after school)
+        days = [today] + [d for d in _menu_days() if d > today][:1]
+        frame = "No day named: this covers today and the next day with a menu posted."
+    out = [frame, "", _checked_line(first_n)]
     for d in days:
-        out.append(f"\n{d:%A, %B} {d.day}, {d.year}{_tag(d, today)}")
-        found = False
-        for s in sections:
-            if d in s.days:
-                heading, items = s.days[d]
-                if items:
-                    found = True
-                    out.append(f"  {s.name}" + (f" ({heading})" if heading else "") + ":")
-                    out.extend(f"    - {item}" for item in items)
-        if not found:
-            out.append("  no menu posted for this day" + (" (weekend)" if d.weekday() >= 5 else ""))
+        out += _day_lines(d, today)
     out.append("\nEvery day (not tied to a date):")
     for s in sections:
         out.append(f"  {s.name}: " + "; ".join(s.info) if s.info else f"  {s.name}:")
         for heading, items in s.everyday:
             out.append(f"    {heading or 'Items'}: " + "; ".join(items))
-    return "\n".join(out)
+    return "\n".join(out), source
 
 
-INSTRUCTIONS = (
-    "Answer the student's question about food at Saint Francis using ONLY the Lancer Cafe menu below, from the "
-    "cafe's page on sfhs.com. The dates are already worked out; trust them and don't do your own date math. Always "
-    "give the weekday and date (like \"Wednesday, Oct 7\"). Quote dishes and prices as they're written, and keep it "
-    "easy to scan (a short list is great). If a day says no menu posted, say the cafe hasn't posted a menu for it "
-    "(it may not be a school day) and point them to sfhs.com/lancer-cafe. Don't invent ingredients or allergy info; "
-    "for allergies, mention all food is made without nuts and to email lancercafe@sfhs.com. Cite the menu as [1]."
+def day_block(d, today, first_n=1):
+    """(text, sources): just one day's breakfast and lunch (for announcement summaries)."""
+    source = [{"n": first_n, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
+    if not sections:
+        return f"[{first_n}] Lancer Cafe menu: not available right now.", source
+    return "\n".join([_checked_line(first_n)] + _day_lines(d, today)), source
+
+
+NOTES = (
+    "The source is the Lancer Cafe menu from the cafe's page on sfhs.com. Quote dishes and prices as they're written "
+    "(a short list is great). If a day says no menu posted, say the cafe hasn't posted a menu for it (it may not be a "
+    "school day) and point to sfhs.com/lancer-cafe. Don't invent ingredients or allergy info; for allergies, mention "
+    "all food is made without nuts and to email lancercafe@sfhs.com."
 )
-
-
-def messages(p, question, history, profile, now):
-    system = prompts.SFMATE_PERSONA + "\n\n" + INSTRUCTIONS + prompts.student_blurb(profile)
-    frame = (f"Time frame of the question: {p.time_frame.describe()}." if p.time_frame
-             else "No day named: the menu below covers today and the next day with a menu posted.")
-    context = f"Right now: {dates.long_day(now.date())}, {now:%I:%M %p}".replace(" 0", " ") + f" (school time).\n{frame}\n\n{p.agenda}"
-    return [{"role": "system", "content": system}, *history,
-            {"role": "user", "content": f"{context}\n\nQuestion: {question}"}]

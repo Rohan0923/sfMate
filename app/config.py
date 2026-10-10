@@ -62,8 +62,6 @@ _SFHS_CALENDARS = (
 CALENDAR_ICS_URLS = [u.strip().replace("webcal://", "https://", 1)
                      for u in _env("CALENDAR_ICS_URLS", _SFHS_CALENDARS).split(",") if u.strip()]
 CALENDAR_REFRESH_MINUTES = float(_env("CALENDAR_REFRESH_MINUTES", "30"))
-CALENDAR_PROMPT_DAYS = int(_env("CALENDAR_PROMPT_DAYS", "14"))           # how far ahead the model always sees
-CALENDAR_PROMPT_MAX_EVENTS = int(_env("CALENDAR_PROMPT_MAX_EVENTS", "40"))
 
 # Lancer Cafe menu page (read live); "" turns it off
 MENU_URL = _env("MENU_URL", "https://www.sfhs.com/lancer-cafe")

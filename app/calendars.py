@@ -1,5 +1,5 @@
-"""School calendars from public iCal (.ics) feeds: refreshed in the background, every event searchable, and the next
-two weeks handed straight to the model (search alone can't answer "what's happening this week?")."""
+"""School calendars from public iCal (.ics) feeds: refreshed in the background, read by the calendar path
+(app/schedule.py), and searchable for long-term questions."""
 import logging
 import threading
 from datetime import date, datetime, time, timedelta
@@ -87,26 +87,6 @@ def event_text(ev):
         lines.append(f"Where: {ev['location']}")
     if ev["description"]:
         lines.append(ev["description"])
-    return "\n".join(lines)
-
-
-def upcoming_text(now, days=None, max_events=None):
-    """The next two weeks, one line per event, for the model's instructions. "" if there's nothing."""
-    days = days or config.CALENDAR_PROMPT_DAYS
-    max_events = max_events or config.CALENDAR_PROMPT_MAX_EVENTS
-    today = now.date()
-    soon = [ev for ev in events if _day(ev["end"] or ev["start"]) >= today and _day(ev["start"]) < today + timedelta(days=days)]
-    lines = []
-    for ev in soon[:max_events]:
-        line = f"- {when(ev)}: {ev['title']}"
-        if ev["location"]:
-            line += f" @ {ev['location']}"
-        line += f" [{ev['calendar']}]"
-        if _day(ev["start"]) <= today and ev["description"]:   # today's details (like the bell schedule) in full
-            line += "".join(f"\n  {d}" for d in ev["description"][:300].split("\n") if d.strip())
-        lines.append(line)
-    if len(soon) > max_events:
-        lines.append(f"- …and {len(soon) - max_events} more (ask about a specific date or event)")
     return "\n".join(lines)
 
 

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import pytest
 import requests
 
-from app import calendars, config, prompts, rag
+from app import calendars, config, rag
 
 TZ = calendars.SCHOOL_TZ
 NOW = datetime(2026, 10, 5, 9, 30, tzinfo=TZ)   # a Monday
@@ -106,33 +106,3 @@ def test_refresh_only_embeds_new_events(feeds, monkeypatch):
     monkeypatch.setattr(rag, "embed", lambda texts, **kw: embedded.extend(texts) or real_embed(texts, **kw))
     calendars.refresh()
     assert embedded == []
-
-
-def test_upcoming_text(feeds):
-    calendars.refresh()
-    text = calendars.upcoming_text(NOW, days=14, max_events=40)
-    lines = text.split("\n")
-    assert lines[0] == "- Mon Oct 5, 2026, 8:05 AM – 2:30 PM: B2 [SFHS School Schedule]"
-    assert lines[1:4] == ["  B2 Day Schedule", "  7:45 - 8:00 Collaboration", "  8:05 - 2:30 School Day"]   # today: in full
-    assert "- Mon Oct 12, 2026: NO SCHOOL [SFHS School Schedule]" in lines
-    assert any("Fall Band & Choir Concert @ Graham Theater" in l for l in lines)
-    assert "Choir, Symphonic" not in text   # only today's events get their details
-    assert "Tue Oct 20" not in text and "Tue Oct 27" not in text   # beyond two weeks
-    short = calendars.upcoming_text(NOW, days=14, max_events=2)
-    assert short.endswith("more (ask about a specific date or event)")
-    # an event that started yesterday and runs through today still counts as current
-    assert "Junior Retreat #1" in calendars.upcoming_text(datetime(2026, 10, 8, 12, tzinfo=TZ), days=1)
-
-
-def test_upcoming_list_goes_into_the_chat_prompt(feeds, monkeypatch):
-    calendars.refresh()
-    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
-    system = prompts.rag_messages("is there school next monday?", [], None)[0][0]["content"]
-    assert "Today is Monday, October 5, 2026, and it's 9:30 AM (school time)." in system
-    assert "The next two weeks on the official school calendars" in system and "Mon Oct 12, 2026: NO SCHOOL" in system
-
-
-def test_no_calendars_no_block(monkeypatch):
-    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
-    system = prompts.rag_messages("hi", [], None)[0][0]["content"]
-    assert "next two weeks" not in system

@@ -7,9 +7,13 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
  students ──► Render (web server, always on)
                 ├─ pages: home, sign up / log in, setup, chat
                 ├─ accounts (@sfhs.com + emailed code), profiles, daily limits ──► Postgres
-                ├─ search over sfhs.com + Handbook + Course Guide (prebuilt, data/) + Daily Announcements
-                │    + the school calendars (Activities & Events, School Schedule; refreshed every 30 min)
-                │    + the Lancer Cafe menu (sfhs.com/lancer-cafe, read live every 2 hours)
+                ├─ every question is classified, then answered from ONLY its source, drafted and checked:
+                │    announcements → Daily Announcements emails (summaries follow each student's
+                │                    Announcement Preferences, plus that day's lunch)
+                │    calendar      → school calendars (Activities & Events, School Schedule; every 30 min)
+                │    courses       → Course Scheduling Guide        rules → Student-Parent Handbook
+                │    menu          → Lancer Cafe menu (live, every 2 hours)
+                │    clubs / misc  → the best sfhs.com pages, read whole (live)
                 ├─ reads Daily Announcements / sends sign-up codes ──► sfMate Gmail
                 └─ asks the model ──► RunPod Serverless (vLLM, Qwen2.5-32B), scales to zero
 ```
@@ -134,7 +138,6 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements (school time) |
 | `GOOGLE_CLIENT_ID` | blank | Turns on "Continue with Google" (school accounts only) |
 | `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
-| `CALENDAR_PROMPT_DAYS` | `14` | How many days ahead sfMate always sees (beyond that, it searches) |
 | `MENU_URL` | `https://www.sfhs.com/lancer-cafe` | The cafe page the daily menu is read from; blank turns it off |
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
@@ -149,6 +152,7 @@ site's address (for example `https://sfmate.onrender.com`) under **Authorized Ja
 - **"Waking up sfMate's brain…" for a long time:** the GPU is cold-starting. Normal for the first question after
   a break (1–3 minutes). If it never answers, check RunPod's endpoint page (are workers starting? any credit left?).
 - **Codes not arriving:** check spam. The logs say "couldn't send code" if Gmail rejected the app password.
+- **Which path a question took:** the logs say `question '…' -> calendar` (or rules, menu, …) for every message.
 - **Announcements not showing:** the logs say "skipped an email from …" if the sender isn't in `ANNOUNCE_SENDERS`.
 - **Calendar events missing:** the logs say "calendar N failed to refresh" if a feed is down; sfMate keeps the
   last copy it got and tries again in 30 minutes.
@@ -166,7 +170,9 @@ app/rag.py            search index + query embedding
 app/prompts.py        persona and every instruction the model gets
 app/announcements.py  Gmail reader + schedule
 app/calendars.py      school calendar feeds
-app/schedule.py       scheduling questions: calendars only, exact dates, double-check
+app/router.py         every question: classify -> read only that source -> draft -> check -> answer
+app/schedule.py       calendar path: exact dates, the next 14 days, scanning the rest of the year
+app/site.py           Misc (and clubs for now): the best sfhs.com pages, read whole and live
 app/dates.py          "next Friday", "this weekend", "Oct 12" -> exact dates
 app/menu.py           Lancer Cafe menu: read live, answered by day
 app/db.py             database tables

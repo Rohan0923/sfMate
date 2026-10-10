@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, config, llm, menu, prompts, rag, schedule
+from . import announcements, auth, calendars, config, llm, menu, prompts, rag, router
 from .db import announcement_summaries, engine, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -189,6 +189,7 @@ class ProfileRequest(BaseModel):
     grade: int | None = None   # 9-12
     hobbies: str = ""
     favorite_food: str = ""
+    announcements: list[str] | None = None   # Announcement Preferences: topic keys (None = all of them)
     skipped: bool = False      # "Yo, just get me to the chatbot"
 
 
@@ -201,8 +202,12 @@ def save_profile(req: ProfileRequest, user=Depends(auth.current_user)):
             raise HTTPException(400, "Grade has to be 9, 10, 11, or 12")
         if len(req.first_name) > 40 or len(req.favorite_food) > 80 or len(req.hobbies) > 500:
             raise HTTPException(400, "That's a bit long, keep it short and sweet")
+        if req.announcements is not None and not set(req.announcements) <= set(announcements.TOPIC_KEYS):
+            raise HTTPException(400, "Unknown announcement topic")
         profile = {"first_name": req.first_name.strip(), "grade": req.grade,
-                   "hobbies": req.hobbies.strip(), "favorite_food": req.favorite_food.strip()}
+                   "hobbies": req.hobbies.strip(), "favorite_food": req.favorite_food.strip(),
+                   "announcements": [k for k in announcements.TOPIC_KEYS
+                                     if req.announcements is None or k in req.announcements]}
     update_user(user["username"], profile=profile)
     return {"ok": True}
 
@@ -259,29 +264,7 @@ def chat(req: ChatRequest, user=Depends(auth.current_user)):
     use_one_message(user["username"])
     history = [{"role": m["role"], "content": str(m["content"])[:4000]}
                for m in req.history if m.get("role") in ("user", "assistant")][-6:]   # last 3 exchanges
-    return stream_response(None, answer(message, history, user["profile"]))
-
-
-def answer(message, history, profile):
-    """Food questions: the cafe menu for the exact day. Scheduling questions: calendars only, double-checked first.
-    Everything else: search all sources."""
-    now = prompts.school_now()
-    food = menu.plan(message, history, now)
-    if food:
-        yield {"sources": food.sources}
-        yield from llm.stream_chat(menu.messages(food, message, history, profile, now))
-        return
-    plan = schedule.plan(message, history, now)
-    if plan:
-        notes = llm.complete(schedule.check_messages(plan, message, now), max_tokens=400, temperature=0)
-        if plan.time_frame or not schedule.found_nothing(notes):
-            yield {"sources": plan.sources}
-            yield from llm.stream_chat(schedule.answer_messages(plan, notes, message, history, profile, now))
-            return
-        log.info("nothing on the calendars for %r; answering from all sources", message[:80])
-    messages, hits = prompts.rag_messages(message, history, profile, now=now)
-    yield {"sources": [{"n": i, "title": c["title"], "url": c["url"]} for i, (c, _) in enumerate(hits, 1)]}
-    yield from llm.stream_chat(messages)
+    return stream_response(None, router.answer(message, history, user["profile"]))
 
 
 # ---------- Daily Announcements ----------
@@ -309,11 +292,13 @@ def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_use
     if not a:
         raise HTTPException(404, "Those announcements aren't available anymore")
     update_user(user["username"], announcement_answered=a["id"])
-    sources = [{"n": 1, "title": f"Daily Announcements · {a['label']}", "url": ""}]
+    key = router.summary_cache_key(a["id"], user["profile"])   # one summary per email per set of chosen topics
     with engine.begin() as conn:
         cached = conn.execute(sa.select(announcement_summaries.c.text)
-                              .where(announcement_summaries.c.id == a["id"])).scalar()
-    if cached:   # someone already asked: instant, no GPU
+                              .where(announcement_summaries.c.id == key)).scalar()
+    if cached:   # someone with the same topics already asked: instant, no GPU
+        sources = [{"n": 1, "title": f"Daily Announcements · {a['label']}", "url": ""},
+                   {"n": 2, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
         return stream_response(sources, iter([cached]))
 
     def save(text):
@@ -321,8 +306,8 @@ def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_use
             return
         try:
             with engine.begin() as conn:
-                conn.execute(announcement_summaries.insert().values(id=a["id"], text=text))
+                conn.execute(announcement_summaries.insert().values(id=key, text=text))
         except sa.exc.IntegrityError:
             pass   # two students said yes at the same moment; the first summary saved wins
 
-    return stream_response(sources, llm.stream_chat(prompts.summary_messages(a), max_tokens=350), on_complete=save)
+    return stream_response(None, router.announcement_summary(a, user["profile"]), on_complete=save)

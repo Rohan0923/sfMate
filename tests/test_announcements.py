@@ -99,3 +99,38 @@ def test_fetch_and_poll(monkeypatch):
     monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "wrong")
     with pytest.raises(imaplib.IMAP4.error):
         announcements.fetch()
+
+
+SAMPLE = open("tests/fixtures/daily_announcements.txt").read()
+
+
+def test_sample_email_splits_into_its_sections():
+    sections = announcements.split_sections(SAMPLE)
+    assert [k for k, _, _ in sections] == announcements.TOPIC_KEYS   # all ten, in order
+    by_key = {k: b for k, _, b in sections}
+    assert by_key["daytype_birthdays"].startswith("Happy Birthday wishes") and "Isla Jordan" in by_key["daytype_birthdays"]
+    assert "LOST ITEMS!" in by_key["highlights"] and "Join Chess" not in by_key["highlights"]
+    assert by_key["happening_today"].startswith("Join Chess") and "Football @ St. Ignatius" in by_key["happening_today"]
+    assert "check the Athletics page" in by_key["athletics"]   # "Athletics" inside a sentence isn't a heading
+    assert by_key["counseling"].startswith("Class of 2027") and by_key["library"].startswith("Find out what's new")
+
+
+def test_missing_sections_are_simply_absent():
+    email = "Happy birthday Sam!\n\nAthletics\n\nGame at 7.\n\nLibrary\n\nNew books."
+    assert [(k, b) for k, _, b in announcements.split_sections(email)] == [
+        ("daytype_birthdays", "Happy birthday Sam!"), ("athletics", "Game at 7."), ("library", "New books.")]
+
+
+def test_unrecognized_format_is_kept_whole():
+    assert announcements.split_sections("Big news today.\nRally at 2.") == [(None, "", "Big news today.\nRally at 2.")]
+
+
+@pytest.mark.parametrize("question,summary", [
+    ("summarize today's announcements", True), ("announcements", True), ("today's announcements?", True),
+    ("what's in the announcements", True), ("catch me up on the announcements", True),
+    ("when is the DECA application due according to the announcements", False),
+    ("did the announcements say anything about the potluck time", False),
+    ("did thursday's announcements mention DECA", False), ("what were friday's announcements", True),
+])
+def test_summary_or_specific(question, summary):
+    assert announcements.wants_summary(question) is summary

@@ -79,3 +79,12 @@ def retrieve(query, k=5):
         return []
     scores = np.concatenate(scores)
     return [(pool[i], float(scores[i])) for i in np.argsort(-scores)[:k]]
+
+
+def retrieve_where(query, k, keep):
+    """Like retrieve, but only over prebuilt chunks where keep(chunk) is true (one isolated source)."""
+    idx = [i for i, c in enumerate(docs) if keep(c)]
+    if not idx:
+        return []
+    scores = doc_embs[idx] @ embed([query], query=True)[0]
+    return [(docs[idx[i]], float(scores[i])) for i in np.argsort(-scores)[:k]]

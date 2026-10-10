@@ -1,0 +1,110 @@
+from datetime import date, datetime, timedelta
+
+import pytest
+
+from app import announcements, prompts, router
+from tests.test_app import EMAIL, fake_announcement, sse_events
+
+TODAY = date(2026, 10, 9)
+
+
+@pytest.mark.parametrize("model_says,question,expected", [
+    ("rules", "can I wear a hoodie?", ["rules"]),
+    ("Calendar, Menu.", "is there school friday and what's for lunch", ["calendar", "menu"]),
+    ("courses, rules, calendar", "what do I need for AP Chem", ["courses", "rules"]),        # at most two
+    ("misc, clubs", "how do I start a club", ["clubs"]),                                     # misc only on its own
+    ("calendar", "what's in today's announcements?", ["announcements", "calendar"]),         # knee-jerk: announcements
+    ("misc", "what's for lunch", ["menu"]),                                                  # knee-jerk: food
+    ("announcements", "summarize the announcements and lunch", ["announcements", "menu"]),
+    ("I think this is about dates", "is there school monday?", ["calendar"]),                # unusable: keyword rules
+    ("???", "who is the principal", ["misc"]),
+])
+def test_classify(fake_llm, question, model_says, expected):
+    fake_llm.category = model_says
+    assert router.classify(question, [], TODAY) == expected
+
+
+def test_classifier_sees_the_previous_question(fake_llm):
+    router.classify("what about friday?", [{"role": "user", "content": "is there school monday?"}], TODAY)
+    asked = fake_llm.calls_for("classify")[0][1]["content"]
+    assert asked == "Previous question (for context): is there school monday?\nQuestion: what about friday?"
+
+
+NOW = datetime(2026, 10, 9, 10, 0, tzinfo=announcements.SCHOOL_TZ)
+
+
+def email_on(day, ann_id="<a@sfhs.com>", text=EMAIL):
+    sent = datetime(day.year, day.month, day.day, 7, 30, tzinfo=announcements.SCHOOL_TZ)
+    return {"id": ann_id, "sent": sent, "label": f"{sent:%a %b} {sent.day}, {sent.year}", "text": text}
+
+
+def test_specific_announcement_questions_read_the_whole_email(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    (ctx,) = router._announcement_context("when is the multicultural showcase potluck?", [], NOW, ["library"], 1)
+    assert "Thursday, October 15 at 2:45pm" in ctx.text and "Isla Jordan" in ctx.text   # everything, preferences aside
+    assert ctx.note == router.ANNOUNCE_DETAIL_NOTE
+
+
+def test_summaries_use_the_students_topics_plus_lunch(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    email, lunch = router._announcement_context("summarize today's announcements", [], NOW, ["athletics", "library"], 1)
+    assert "## Athletics" in email.text and "## Library" in email.text
+    assert "DECA" not in email.text and "Isla Jordan" not in email.text
+    assert email.note == router.ANNOUNCE_SUMMARY_NOTE
+    assert lunch.category == "menu" and lunch.sources[0]["n"] == 2
+
+
+def test_which_email(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY - timedelta(days=1), "<thu>")])
+    (ctx,) = router._announcement_context("what's in today's announcements", [], NOW, announcements.TOPIC_KEYS, 1)[:1]
+    assert "sent Thu Oct 8, 2026" in ctx.text and "most recent one" in ctx.text   # today's hasn't come in yet
+    (ctx,) = router._announcement_context("did wednesday's announcements mention DECA", [], NOW, announcements.TOPIC_KEYS, 1)
+    assert ctx.text == "There's no Daily Announcements email for Wednesday, October 7, 2026 in sfMate's inbox."
+    (ctx,) = router._announcement_context("did thursday's announcements mention DECA", [], NOW, announcements.TOPIC_KEYS, 1)
+    assert "sent Thu Oct 8, 2026" in ctx.text and "most recent" not in ctx.text   # last Thursday, not next
+
+
+def test_courses_and_rules_are_isolated():
+    courses = router.build(["courses"], "AP chemistry prerequisite", [], NOW, [])[0]
+    assert [s["title"] for s in courses.sources] == ["Course Scheduling Guide 2026-27 · 653 AP Chemistry"]
+    rules = router.build(["rules"], "AP chemistry prerequisite", [], NOW, [])[0]   # same words, other source
+    assert [s["title"] for s in rules.sources] == ["Student-Parent Handbook 2026-27 §4.4 Dances"]
+
+
+def test_clubs_read_only_club_pages():
+    clubs = router.build(["clubs"], "how do I apply for admission to a club", [], NOW, [])[0]
+    assert [s["url"] for s in clubs.sources] == ["https://www.sfhs.com/clubs-and-activities"]
+    assert "over 80 clubs" in clubs.text
+
+
+def test_misc_reads_whole_pages():
+    misc = router.build(["misc"], "how do I apply for admission", [], NOW, [])[0]
+    assert misc.sources[0] == {"n": 1, "title": "Admissions", "url": "https://www.sfhs.com/admissions"}
+    assert "apply for admission tuition financial aid deadline" in misc.text and not misc.falls_back
+
+
+def test_chat_announcement_question_end_to_end(monkeypatch, client, make_user, fake_llm):
+    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    h = make_user()
+    fake_llm.category = "calendar"   # the word "announcement" wins anyway
+    events = sse_events(client.post("/chat", json={"message": "what did the announcements say about DECA?"}, headers=h).text)
+    assert events[0]["sources"] == [{"n": 1, "title": "Daily Announcements · Fri Oct 9, 2026", "url": ""}]
+    draft = fake_llm.calls_for("draft")[0][-1]["content"]
+    assert "Applications are due Friday, October 9th!" in draft and "SFHS School" not in draft
+
+
+def test_courses_not_found_falls_back_to_sfhs_com(monkeypatch, client, make_user, fake_llm):
+    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
+    h = make_user()
+    fake_llm.queue = [["courses"], ["NOT FOUND"]]
+    events = sse_events(client.post("/chat", json={"message": "how much is tuition for admission"}, headers=h).text)
+    assert [e["sources"][0]["title"] for e in events if "sources" in e] == [
+        "Course Scheduling Guide 2026-27 · 653 AP Chemistry", "Admissions"]
+    assert len(fake_llm.calls_for("draft")) == 2
+
+
+def test_summary_cache_key_depends_on_topics():
+    everyone = router.summary_cache_key("<a>", None)
+    assert everyone == router.summary_cache_key("<a>", {"skipped": True})
+    assert everyone != router.summary_cache_key("<a>", {"announcements": ["athletics"]})

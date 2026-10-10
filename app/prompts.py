@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import calendars, config, dates, rag
+from . import announcements, config
 
 SFMATE_PERSONA = ("You are sfMate, high school general advisor. You are to talk like a teenager: "
                   "with slang but still respectful and with nothing too corny. "
@@ -39,38 +39,6 @@ def student_blurb(profile):
             "but don't recite it back unprompted.")
 
 
-def rag_messages(question, history, profile, k=5, now=None):
-    """System prompt + prior turns + retrieved context. Returns (messages, hits)."""
-    prev_user = [m["content"] for m in history if m["role"] == "user"][-1:]   # helps follow-ups like "what about juniors?"
-    hits = rag.retrieve(" ".join(prev_user + [question]), k)
-    context = "\n\n".join(
-        f"[{i}] {c['title']}" + (f" ({c['url']})" if c["url"] else "") + f"\n{c['text']}" for i, (c, _) in enumerate(hits, 1)
-    )
-    today = now or school_now()
-    upcoming = calendars.upcoming_text(today)
-    time_frame = dates.resolve(question, today.date())
-    system = (
-        SFMATE_PERSONA + "\n\n"
-        f"Today is {today:%A, %B} {today.day}, {today.year}, and it's {today:%I:%M %p}".replace(" 0", " ") + " (school time). "
-        + (f"The question's time frame, already worked out: {time_frame.describe()}. " if time_frame else "") +
-        "Answer questions about Saint Francis High School using ONLY the context below, which comes from "
-        "sfhs.com, the official Student-Parent Handbook, the 2026-27 Course Scheduling Guide, recent Daily "
-        "Announcements emails, and the official school calendars. For rules and policies, the Handbook is the "
-        "authority; for courses, prerequisites, and graduation requirements, the Course Scheduling Guide is; for "
-        "dates, schedules, and days off, the school calendars are. Each Daily Announcements email is dated: "
-        "'today' or 'tomorrow' inside one is relative to that email's date, not necessarily to today. "
-        "Cite sources inline like [1]. If the context doesn't contain the answer, say you don't know "
-        "and suggest checking sfhs.com or asking the Deans' office."
-        + (f"\n\nThe next two weeks on the official school calendars (the School Schedule calendar names each "
-           f"day's bell schedule, like B1 or G2; cite this list as \"the school calendar\"):\n{upcoming}"
-           if upcoming else "")
-        + student_blurb(profile)
-    )
-    messages = [{"role": "system", "content": system}, *history,
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}]
-    return messages, hits
-
-
 # ---------- welcome message (chat welcome screen) ----------
 WELCOME_INSTRUCTIONS = (
     "Write a welcome message for a Saint Francis High School student who just opened sfMate. "
@@ -87,7 +55,14 @@ def welcome_messages(profile):
 
 
 def profile_key(profile):
-    return json.dumps(profile, sort_keys=True)
+    """What the welcome message depends on (changing announcement preferences doesn't rewrite it)."""
+    return json.dumps({k: v for k, v in (profile or {}).items() if k != "announcements"}, sort_keys=True)
+
+
+def announcement_prefs(profile):
+    """The topics the student wants in announcement summaries (all of them unless they've chosen)."""
+    chosen = (profile or {}).get("announcements")
+    return [k for k in announcements.TOPIC_KEYS if k in chosen] if isinstance(chosen, list) else list(announcements.TOPIC_KEYS)
 
 
 def tidy_welcome(text):
@@ -97,14 +72,3 @@ def tidy_welcome(text):
 
 # ---------- Daily Announcements summary ----------
 ANNOUNCE_PROMPT = "Daily announcements are out. Want me to summarize?"
-SUMMARY_INSTRUCTIONS = (
-    "Summarize these Daily Announcements for a Saint Francis High School student. Use a short bulleted list "
-    "(about 4-8 bullets) of what actually matters: events, deadlines, sign-ups, schedule changes, and who they're for, "
-    "with dates, times, and places. Skip greetings, sign-offs, and boilerplate. Don't add anything that isn't in the "
-    "email. Under 160 words."
-)
-
-
-def summary_messages(announcement):
-    return [{"role": "system", "content": SFMATE_PERSONA + "\n\n" + SUMMARY_INSTRUCTIONS},
-            {"role": "user", "content": f"Daily Announcements ({announcement['label']}):\n\n{announcement['text'][:8000]}"}]
