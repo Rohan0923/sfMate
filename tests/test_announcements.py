@@ -233,3 +233,34 @@ def test_refresh_now_is_rate_limited(monkeypatch):
     monkeypatch.setattr(announcements, "_last_attempt", 0.0)
     monkeypatch.setattr(announcements, "fetch", lambda: (_ for _ in ()).throw(imaplib.IMAP4.error("down")))
     assert announcements.refresh_now("test") is False   # a failure is logged, not raised
+
+
+# ---------- the real email (10/9/26, forwarded from a school account; anonymized) ----------
+REAL_EML = open("tests/fixtures/daily_announcements_real.eml", "rb").read()
+
+
+def test_the_real_email_reads_cleanly():
+    ann, why = announcements.parse_email(REAL_EML, "1")
+    assert why is None and ann["sender"] == "noreply@sfhs.com" and ann["subject"] == "Daily Announcements: 10/9/26"
+    text = ann["text"]
+    assert text.startswith("for\n\nFriday\n\nOctober 9, 2026\n\nToday is a B2 Schedule\n\nHappy Birthday wishes")
+    assert text.endswith("make student life a little easier.")   # the Library section, then nothing (footer trimmed)
+    for junk in ("<!DOCTYPE", "<style", "{", "mso-", "View this email", "Unsubscribe", "non-discrimin", "Submit them here"):
+        assert junk not in text, junk
+    assert len(text) < 7000   # the announcements, not the 51,000-character raw HTML in the "plain text" part
+    assert [k for k, _, _ in announcements.split_sections(text)] == announcements.TOPIC_KEYS
+
+
+def test_the_version_with_the_announcements_wins_not_the_longest():
+    real_html = REAL_EML.decode("utf-8", "ignore")
+    m = EmailMessage()
+    m["Subject"], m["From"], m["To"], m["Date"] = "Daily Announcements", "news@sfhs.com", "x@gmail.com", format_datetime(NOW)
+    m.set_content("View this email in your browser\n" + "Lots of unrelated plain text.\n" * 3000)   # long, no sections
+    m.add_alternative(newsletter_html(SAMPLE, 0), subtype="html")
+    ann, _ = announcements.parse_email(m.as_bytes(), "1")
+    assert "Join Chess during both lunches" in ann["text"] and "unrelated plain text" not in ann["text"]
+
+
+def test_footer_is_only_trimmed_after_the_sections():
+    text = announcements.email_text("Unsubscribe from the Chess Club list if you want.\n\nAthletics\n\nGame at 7.\n\nUnsubscribe", False)
+    assert text == "Unsubscribe from the Chess Club list if you want.\n\nAthletics\n\nGame at 7."

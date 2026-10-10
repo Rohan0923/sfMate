@@ -35,6 +35,10 @@ def enabled():
 
 # ---------- reading one email ----------
 SHORT_EMAIL = 600   # a real Daily Announcements email is thousands of characters
+LOOKS_LIKE_HTML = re.compile(r"<\s*(!doctype|html|head|body|table|div)\b", re.I)
+VIEW_IN_BROWSER = re.compile(r"^view (this|it|the) (email|message|newsletter)? ?in (your|a|the) (web )?browser\.?$", re.I)
+FOOTER = re.compile(r"^(see what'?s on the menu|do you have a daily announcement|remember,? you can find all current "
+                    r"announcements|saint francis high school, sponsored by|unsubscribe\b|update your preferences)", re.I)
 FORWARD_HEADER = re.compile(r"-{3,}\s*Forwarded message\s*-{3,}.*?\n\s*\n", re.S | re.I)   # if forwarded by hand
 BLOCK_TAGS = ["p", "div", "li", "tr", "table", "blockquote", "section", "h1", "h2", "h3", "h4", "h5", "h6"]
 
@@ -76,6 +80,21 @@ def clean_text(text):
     return "\n".join(out).strip()
 
 
+def email_text(body, as_html):
+    """One part of an email as clean text, without the "view in browser" line and the footer after the last section."""
+    text = clean_text(html_to_text(body, email=True) if as_html else body)
+    out, seen_heading = [], False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if VIEW_IN_BROWSER.match(stripped):
+            continue
+        if seen_heading and FOOTER.match(stripped):
+            break   # the footer: submission link, non-discrimination statement, unsubscribe
+        seen_heading = seen_heading or bool(len(stripped) <= 60 and _heading_key(stripped))
+        out.append(line)
+    return clean_text("\n".join(out))
+
+
 def parse_email(raw, uid):
     """Returns (announcement dict, None) or (None, the reason it was skipped)."""
     msg = email.message_from_bytes(raw, policy=email.policy.default)
@@ -89,8 +108,9 @@ def parse_email(raw, uid):
         sent = parsedate_to_datetime(str(msg["Date"])).astimezone(SCHOOL_TZ)
     except Exception:
         sent = datetime.now(SCHOOL_TZ)
-    # Read every plain-text and HTML part (including an email forwarded as an attachment) and keep the fullest:
-    # some senders put only "view this email in your browser" in one of them
+    # Read every plain-text and HTML part (including an email forwarded as an attachment) and keep the one with the
+    # real announcements in it. Not the longest: the school's system puts the raw HTML source (CSS and all) in the
+    # "plain text" part, which is 8x longer than the actual announcements.
     versions = []
     for part in msg.walk():
         kind = part.get_content_type()
@@ -100,8 +120,10 @@ def parse_email(raw, uid):
             body = part.get_content()
         except Exception:
             continue
-        versions.append(clean_text(html_to_text(body, email=True) if kind == "text/html" else body))
-    text = max(versions, key=len, default="")
+        text = email_text(body, as_html=kind == "text/html" or bool(LOOKS_LIKE_HTML.search(body[:3000])))
+        headings = sum(1 for k, _, _ in split_sections(text) if k and k != "daytype_birthdays")
+        versions.append((headings, kind == "text/html", len(text), text))
+    text = max(versions, default=(0, False, 0, ""))[3]   # most section headings, then the HTML part, then the longest
     if len(text) < 20:
         return None, "empty"
     return {

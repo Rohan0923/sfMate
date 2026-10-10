@@ -7,3 +7,6 @@ sfmate-dev.db
 .hf-cache/
 .pytest_cache/
 .DS_Store
+
+# downloaded emails (personal); the anonymized test copy lives in tests/fixtures
+/*.eml

@@ -180,3 +180,19 @@ def test_inbox_not_read_yet_is_said_plainly(monkeypatch):
     monkeypatch.setattr(announcements, "fetch", lambda: (_ for _ in ()).throw(TimeoutError("imap")))
     (ctx,) = router._announcement_context("today's announcements", [], NOW, announcements.TOPIC_KEYS, 1)
     assert "hasn't been able to read its Daily Announcements inbox yet" in ctx.text
+
+
+def test_summary_from_the_real_email(monkeypatch, client, make_user, fake_llm):
+    from tests.test_announcements import REAL_EML
+    ann, _ = announcements.parse_email(REAL_EML, "1")
+    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
+    monkeypatch.setattr(announcements, "announcements", [ann])
+    h = make_user()
+    fake_llm.category = "announcements"
+    events = sse_events(client.post("/chat", json={"message": "summarize today's announcments"}, headers=h).text)
+    assert events[0]["sources"][0] == {"n": 1, "title": "Daily Announcements · Fri Oct 9, 2026", "url": ""}
+    draft = fake_llm.calls_for("draft")[0][-1]["content"]
+    for must in ("Today is a B2 Schedule", "Isla Jordan and Taegan Miller", "## Happening Today", "Join Chess",
+                 "## Guidance & Counseling Announcements", "PSAT on Wednesday, October 14th", "## Library", "whiteboard polls"):
+        assert must in draft, must
+    assert "WARNING" not in draft and "<" not in draft.split("Sources:")[1].split("Question:")[0]
