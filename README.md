@@ -153,6 +153,7 @@ site's address (for example `https://sfmate.onrender.com`) under **Authorized Ja
   a break (1–3 minutes). If it never answers, check RunPod's endpoint page (are workers starting? any credit left?).
 - **Codes not arriving:** check spam. The logs say "couldn't send code" if Gmail rejected the app password.
 - **Which path a question took:** the logs say `question '…' -> calendar` (or rules, menu, …) for every message.
+- **Announcement answers look wrong:** the logs list each new email ("announcement email Fri Oct 9 … characters, sections found: …") and each summary ("… sections, … characters sent"). To see exactly what sfMate reads from the inbox, run `GMAIL_ADDRESS=... GMAIL_APP_PASSWORD=... .venv/bin/python -m scripts.check_announcements`.
 - **Announcements not showing:** the logs say "skipped an email from …" if the sender isn't in `ANNOUNCE_SENDERS`.
 - **Calendar events missing:** the logs say "calendar N failed to refresh" if a feed is down; sfMate keeps the
   last copy it got and tries again in 30 minutes.

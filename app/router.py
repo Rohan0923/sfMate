@@ -44,6 +44,9 @@ RULE_SIGNS = re.compile(r"\b(rules?|polic(y|ies)|dress code|uniform|phones?|allo
 CLUB_SIGNS = re.compile(r"\b(clubs?|affinity|intramurals?|activities)\b", re.I)
 FALLS_BACK = {"courses", "rules", "clubs", "calendar"}   # if their source doesn't have it, try sfhs.com (Misc)
 CONTEXT_CHARS = 14000   # what fits in the model's ~8k-token window with the instructions, draft, and answer
+SUMMARY_CHARS = 11000   # an announcement email (or the chosen sections of one)
+SECTION_CHARS = 3000    # one section can't crowd out the others
+MIN_HEADINGS = 3        # fewer recognized section headings than this: the format changed, send the email whole
 HISTORY = 4             # earlier messages kept (for follow-ups), each trimmed
 HISTORY_CHARS = 1200
 
@@ -130,17 +133,23 @@ def _announcement_context(question, history, now, prefs, n, ann=None, summary=No
     title = f"Daily Announcements · {ann['label']}"
     head = f"[{n}] Daily Announcements email, sent {ann['label']}." + (f" ({note_text})" if note_text else "")
     if not summary:
-        return [Context("announcements", f"{head}\n\n{ann['text'][:9000]}", [{"n": n, "title": title, "url": ""}],
+        log.info("announcement question on %s (%d characters)", ann["label"], len(ann["text"]))
+        return [Context("announcements", f"{head}\n\n{ann['text'][:SUMMARY_CHARS]}", [{"n": n, "title": title, "url": ""}],
                         note=ANNOUNCE_DETAIL_NOTE)]
     chosen = [k for k in announcements.TOPIC_KEYS if k in prefs]
-    kept = [(k, h, b) for k, h, b in announcements.split_sections(ann["text"]) if k is None or k in chosen]
-    if kept and kept[0][0] is None:   # the email's headings weren't recognized: let the model pick the topics
-        body = kept[0][2][:9000]
-    else:
-        body = "\n\n".join(f"## {h}\n{b}" for _, h, b in kept)[:9000] or "(none of the student's topics are in this email)"
+    sections = announcements.split_sections(ann["text"])
     topics = ", ".join(announcements.TOPIC_LABELS[k] for k in chosen)
-    contexts = [Context("announcements", f"{head}\nThe student's chosen topics: {topics}.\nSections of the email "
-                                          f"for those topics:\n\n{body}",
+    if sum(1 for k, _, _ in sections if k and k != "daytype_birthdays") < MIN_HEADINGS:
+        # the email's headings weren't recognized: never drop content, send it whole and let the model pick topics
+        body = f"(The whole email; summarize only the student's chosen topics.)\n\n{ann['text'][:SUMMARY_CHARS]}"
+        log.warning("announcement email %s: section headings not recognized, sending it whole", ann["label"])
+    else:
+        kept = [(h, b) for k, h, b in sections if k in chosen]
+        body = "\n\n".join(f"## {h}\n{b[:SECTION_CHARS]}" for h, b in kept)[:SUMMARY_CHARS] \
+            or "(none of the student's chosen topics are in this email)"
+    log.info("announcement summary from %s (%d characters): %d of %d sections, %d characters sent",
+             ann["label"], len(ann["text"]), sum(1 for k, _, _ in sections if k in chosen), len(sections), len(body))
+    contexts = [Context("announcements", f"{head}\nThe student's chosen topics: {topics}.\n\n{body}",
                         [{"n": n, "title": title, "url": ""}], note=ANNOUNCE_SUMMARY_NOTE)]
     lunch_text, lunch_sources = menu.day_block(ann["sent"].date(), today, n + 1)
     contexts.append(Context("menu", lunch_text, lunch_sources, note="Include that day's lunch from the cafe menu."))
@@ -200,10 +209,12 @@ CALENDAR_NOTE = (
 CALENDAR_DRAFT_NOTE = ("End the draft with a line 'ANSWER DATES: YYYY-MM-DD, ...' listing the date(s) your answer is "
                        "about (or 'ANSWER DATES: none').")
 ANNOUNCE_SUMMARY_NOTE = (
-    "This is this student's own summary of the Daily Announcements. Only the sections for the topics they chose are "
-    "included. Start with that day's lunch, then keep the email's section headings as short bold labels with bullets "
-    "under each. Keep dates, times, places, and deadlines; skip filler like 'Check out the details here!'. 'Today' and "
-    "'tomorrow' inside the email mean the email's date."
+    "This is this student's own summary of a Daily Announcements email, whose text is in the sources: read all of it. "
+    "Start with the day type if the email says it (like 'Today is a B2 Schedule') and that day's lunch. Then, for each "
+    "section of the email that's included, a short bold heading with bullets: every event, deadline, sign-up, and "
+    "meeting, with its date, time, and place. Write a heading ONLY for sections that are in the email text; skip "
+    "topics with no section silently, and never write that a topic had nothing. Skip filler like 'Check out the "
+    "details here!'. 'Today' and 'tomorrow' inside the email mean the email's date."
 )
 ANNOUNCE_DETAIL_NOTE = (
     "The source is a Daily Announcements email. Answer the specific question from it, quoting details exactly, and "
@@ -255,20 +266,22 @@ def _all_sources(contexts):
 
 def run(contexts, question, history, profile, now):
     """Draft, fall back to Misc if needed, check, stream. Yields {"sources": ...} then the answer's text."""
+    if any(c.note == ANNOUNCE_SUMMARY_NOTE for c in contexts):
+        history = []   # a summary stands alone: an earlier answer in the chat shouldn't steer it
     yield {"sources": _all_sources(contexts)}
-    draft = llm.complete(draft_messages(contexts, question, history, now), max_tokens=500, temperature=0.2)
+    draft = llm.complete(draft_messages(contexts, question, history, now), max_tokens=900, temperature=0.2)
     if not_found(draft) and contexts and all(c.falls_back for c in contexts):
         log.info("%s didn't have it; trying sfhs.com for %r", "+".join(c.category for c in contexts), question[:80])
         contexts = [_site_context("misc", question, 1)]
         yield {"sources": _all_sources(contexts)}
-        draft = llm.complete(draft_messages(contexts, question, history, now), max_tokens=500, temperature=0.2)
+        draft = llm.complete(draft_messages(contexts, question, history, now), max_tokens=900, temperature=0.2)
     extra = ""
     calendar = next((c for c in contexts if c.check_dates), None)
     if calendar and calendar.sources:
         extra = schedule.full_days(schedule.answer_dates(draft), now, calendar.sources[0]["n"])
     draft = schedule.without_answer_dates(draft)
     yield from llm.stream_chat(check_messages(contexts, extra, draft, question, history, profile, now),
-                               max_tokens=700, temperature=0.3)
+                               max_tokens=1000, temperature=0.3)
 
 
 def answer(question, history, profile, now=None):
@@ -289,4 +302,4 @@ def announcement_summary(ann, profile, now=None):
 
 def summary_cache_key(ann_id, profile):
     prefs = ",".join(prompts.announcement_prefs(profile))
-    return f"{ann_id}#{hashlib.sha1(prefs.encode()).hexdigest()[:12]}"
+    return f"{ann_id}#v2#{hashlib.sha1(prefs.encode()).hexdigest()[:12]}"   # v2: summaries saved before the fix are ignored

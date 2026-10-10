@@ -34,11 +34,24 @@ FORWARD_HEADER = re.compile(r"-{3,}\s*Forwarded message\s*-{3,}.*?\n\s*\n", re.S
 BLOCK_TAGS = ["p", "div", "li", "tr", "table", "blockquote", "section", "h1", "h2", "h3", "h4", "h5", "h6"]
 
 
-def html_to_text(html_body):
-    """Line breaks only where the email has them (paragraphs, list items, rows, <br>), so bold words stay inline."""
+HIDDEN_STYLE = re.compile(r"display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all|max-height\s*:\s*0(?![.\d])|"
+                          r"font-size\s*:\s*0(?![.\d])|opacity\s*:\s*0(?![.\d])", re.I)
+INVISIBLE = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\u00ad\u034f\u180e"), None)
+
+
+def html_to_text(html_body, drop_hidden=False):
+    """Line breaks only where the email has them (paragraphs, list items, rows, <br>), so bold words stay inline.
+    drop_hidden: skip elements styled invisible (newsletter "preview text" and duplicate mobile versions)."""
     soup = BeautifulSoup(html_body, "html.parser")
-    for tag in soup(["style", "script", "head"]):
+    for tag in soup(["style", "script", "head", "title"]):
         tag.decompose()
+    if drop_hidden:
+        for tag in soup.find_all(style=HIDDEN_STYLE):
+            tag.decompose()
+        for img in soup.find_all("img"):   # section banners drawn as images: keep their heading text
+            alt = " ".join((img.get("alt") or "").split())
+            if alt and _heading_key(alt):
+                img.replace_with(f"\n{alt}\n")
     for br in soup.find_all("br"):
         br.replace_with("\n")
     for li in soup.find_all("li"):
@@ -51,7 +64,7 @@ def html_to_text(html_body):
 
 
 def clean_text(text):
-    text = text.replace("\r", "").replace(chr(0x200B), "").replace("\xa0", " ")
+    text = text.replace("\r", "").translate(INVISIBLE).replace("\xa0", " ").replace("\t", " ")
     text = FORWARD_HEADER.sub("", text)
     out = []
     for line in text.split("\n"):
@@ -74,14 +87,18 @@ def parse_email(raw, uid):
         sent = parsedate_to_datetime(str(msg["Date"])).astimezone(SCHOOL_TZ)
     except Exception:
         sent = datetime.now(SCHOOL_TZ)
-    # Read both the plain-text and HTML versions and keep the fuller one: some senders put only
-    # "view this email in your browser" in the plain-text part
+    # Read every plain-text and HTML part (including an email forwarded as an attachment) and keep the fullest:
+    # some senders put only "view this email in your browser" in one of them
     versions = []
-    for kind in ("plain", "html"):
-        part = msg.get_body(preferencelist=(kind,))
-        if part is not None:
+    for part in msg.walk():
+        kind = part.get_content_type()
+        if kind not in ("text/plain", "text/html"):
+            continue
+        try:
             body = part.get_content()
-            versions.append(clean_text(html_to_text(body) if kind == "html" else body))
+        except Exception:
+            continue
+        versions.append(clean_text(html_to_text(body, drop_hidden=True) if kind == "text/html" else body))
     text = max(versions, key=len, default="")
     if len(text) < 20:
         return None, "empty"
@@ -89,7 +106,9 @@ def parse_email(raw, uid):
         "id": str(msg.get("Message-ID") or f"uid-{uid}").strip(),
         "sent": sent,
         "label": f"{sent:%a %b} {sent.day}, {sent.year}",   # e.g. "Fri Oct 3, 2026"
-        "text": text[:20000],
+        "subject": subject,
+        "sender": sender,
+        "text": text[:40000],
     }, None
 
 
@@ -133,15 +152,24 @@ def poll():
     if [a["id"] for a in items] != [a["id"] for a in announcements]:
         new = len({a["id"] for a in items} - {a["id"] for a in announcements})
         _index(items)
+        known = {a["id"] for a in announcements}
+        for a in items:
+            if a["id"] not in known:
+                found = [k for k, _, _ in split_sections(a["text"]) if k]
+                log.info("announcement email %s from %s, %r: %d characters, sections found: %s",
+                         a["label"], a.get("sender"), a.get("subject"), len(a["text"]), ", ".join(found) or "none")
         announcements = items
         log.info("%d new announcement email(s); %d in search", new, len(items))
 
 
 def todays():
     """Latest Daily Announcements sent today (school time zone), or None."""
-    today = datetime.now(SCHOOL_TZ).date()
-    todays_items = [a for a in announcements if a["sent"].date() == today]
-    return todays_items[-1] if todays_items else None
+    return fullest([a for a in announcements if a["sent"].date() == datetime.now(SCHOOL_TZ).date()])
+
+
+def fullest(emails):
+    """Of several matching emails on one day (the real one, a reminder, a forward...), the one with the most in it."""
+    return max(emails, key=lambda a: len(a["text"]), default=None)
 
 
 def find(ann_id):
@@ -230,15 +258,17 @@ def split_sections(text):
 def for_date(day, exact):
     """(email, note): the latest email sent that day. If there's none and no day was asked for specifically,
     the most recent one before it, with a note saying so."""
-    same_day = [a for a in announcements if a["sent"].date() == day]
+    same_day = fullest([a for a in announcements if a["sent"].date() == day])
     if same_day:
-        return same_day[-1], ""
+        return same_day, ""
     if exact:
         return None, ""
     earlier = [a for a in announcements if a["sent"].date() < day]
     if not earlier:
         return None, ""
-    return earlier[-1], f"No Daily Announcements email has come in for that day yet; this is the most recent one, from {earlier[-1]['label']}."
+    latest_day = earlier[-1]["sent"].date()
+    best = fullest([a for a in earlier if a["sent"].date() == latest_day])
+    return best, f"No Daily Announcements email has come in for that day yet; this is the most recent one, from {best['label']}."
 
 
 SUMMARY_SIGNS = re.compile(

@@ -108,7 +108,7 @@ def test_sample_email_splits_into_its_sections():
     sections = announcements.split_sections(SAMPLE)
     assert [k for k, _, _ in sections] == announcements.TOPIC_KEYS   # all ten, in order
     by_key = {k: b for k, _, b in sections}
-    assert by_key["daytype_birthdays"].startswith("Happy Birthday wishes") and "Isla Jordan" in by_key["daytype_birthdays"]
+    assert "Today is a B2 Schedule" in by_key["daytype_birthdays"] and "Isla Jordan" in by_key["daytype_birthdays"]
     assert "LOST ITEMS!" in by_key["highlights"] and "Join Chess" not in by_key["highlights"]
     assert by_key["happening_today"].startswith("Join Chess") and "Football @ St. Ignatius" in by_key["happening_today"]
     assert "check the Athletics page" in by_key["athletics"]   # "Athletics" inside a sentence isn't a heading
@@ -134,3 +134,47 @@ def test_unrecognized_format_is_kept_whole():
 ])
 def test_summary_or_specific(question, summary):
     assert announcements.wants_summary(question) is summary
+
+
+# ---------- the real email, the way it arrives ----------
+def newsletter_html(text, preheader_chars=12000):
+    """SAMPLE as a newsletter-style HTML email: a hidden preview-text block full of invisible characters, then tables."""
+    hidden = '<div style="display:none;max-height:0;overflow:hidden">' + ("&nbsp;&zwnj;" * (preheader_chars // 2)) + "</div>"
+    rows = "".join(f"<tr><td><p>{line}</p></td></tr>" for line in text.split("\n") if line.strip())
+    return f"<html><body>{hidden}<table>{rows}</table></body></html>"
+
+
+def html_email(subject, sent, html, sender="news@sfhs.com", mid=None):
+    m = EmailMessage()
+    m["Subject"], m["From"], m["To"], m["Date"] = subject, sender, "sfmate@gmail.com", format_datetime(sent)
+    m["Message-ID"] = mid or f"<{abs(hash((subject, html[:50])))}@sfhs.com>"
+    m.set_content("View this email in your browser")
+    m.add_alternative(html, subtype="html")
+    return m
+
+
+def test_hidden_preview_text_and_invisible_characters_are_dropped():
+    ann, why = announcements.parse_email(html_email("Daily Announcements", NOW, newsletter_html(SAMPLE)).as_bytes(), "1")
+    assert why is None
+    assert ann["text"].startswith("for\n\nFriday\n\nOctober 9, 2026\n\nToday is a B2 Schedule")   # no invisible junk first
+    assert "‌" not in ann["text"]
+    assert [k for k, _, _ in announcements.split_sections(ann["text"])] == announcements.TOPIC_KEYS
+
+
+def test_an_email_forwarded_as_an_attachment_is_read():
+    inner = html_email("Daily Announcements", NOW, newsletter_html(SAMPLE, 0))
+    outer = EmailMessage()
+    outer["Subject"], outer["From"], outer["To"], outer["Date"] = "Fwd: Daily Announcements", "me@sfhs.com", "x@gmail.com", format_datetime(NOW)
+    outer.set_content("see attached")
+    outer.add_attachment(inner)
+    ann, _ = announcements.parse_email(outer.as_bytes(), "1")
+    assert "Join Chess during both lunches" in ann["text"]
+
+
+def test_the_fullest_email_of_the_day_wins(monkeypatch):
+    real = {"id": "<real>", "sent": NOW.replace(hour=7), "label": "x", "text": SAMPLE}
+    reminder = {"id": "<rem>", "sent": NOW.replace(hour=9), "label": "x", "text": "Reminder: submit Daily Announcements by 2pm."}
+    monkeypatch.setattr(announcements, "announcements", [real, reminder])
+    assert announcements.for_date(NOW.date(), exact=True)[0]["id"] == "<real>"   # not the later, shorter one
+    monkeypatch.setattr(announcements, "datetime", type("D", (datetime,), {"now": staticmethod(lambda tz=None: NOW)}))
+    assert announcements.todays()["id"] == "<real>"

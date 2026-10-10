@@ -122,7 +122,7 @@ def test_announcements_flow(client, make_user, fake_llm, monkeypatch):
     client.post("/announcements/summary", json={"id": a["id"]}, headers=h3)
     draft = fake_llm.calls_for("draft")[-1][-1]["content"]
     assert "## Athletics" in draft and "## Happening Today" in draft
-    assert "Affinity Groups" not in draft.split("Sections of the email")[1] and "Isla Jordan" not in draft
+    assert "## Affinity Groups" not in draft and "Isla Jordan" not in draft
     assert "The student's chosen topics: Happening today, Athletics." in draft
     assert len(rows(db.announcement_summaries)) == 2
 

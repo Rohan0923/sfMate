@@ -108,3 +108,38 @@ def test_summary_cache_key_depends_on_topics():
     everyone = router.summary_cache_key("<a>", None)
     assert everyone == router.summary_cache_key("<a>", {"skipped": True})
     assert everyone != router.summary_cache_key("<a>", {"announcements": ["athletics"]})
+
+
+def test_summary_of_the_real_email_has_its_content(monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    email, _ = router._announcement_context("summarize todays daily announcments", [], NOW, announcements.TOPIC_KEYS, 1)
+    for must in ("Today is a B2 Schedule", "Isla Jordan and Taegan Miller", "LOST ITEMS!", "Join Chess during both lunches",
+                 "Football @ St. Ignatius HS starting at 7:00 p.m.", "Applications are due Friday, October 9th!",
+                 "Immersion Applications due October 24th", "PSAT on Wednesday, October 14th", "whiteboard polls"):
+        assert must in email.text, must
+    assert "never write that a topic had nothing" in email.note
+
+
+def test_unrecognized_headings_send_the_whole_email(monkeypatch):
+    odd = "Good morning!\nToday is a G1 day.\nRally at 2:40 in the gym.\nChess club meets at lunch."
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY, text=odd)])
+    email, _ = router._announcement_context("summarize the announcements", [], NOW, ["athletics"], 1)
+    assert "Rally at 2:40 in the gym." in email.text and "The whole email" in email.text
+
+
+def test_summaries_ignore_earlier_answers_in_the_chat(monkeypatch, client, make_user, fake_llm):
+    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
+    monkeypatch.setattr(announcements, "announcements", [email_on(TODAY)])
+    h = make_user()
+    history = [{"role": "user", "content": "summarize the announcements"},
+               {"role": "assistant", "content": "No announcements today."}]   # an earlier wrong answer
+    fake_llm.category = "announcements"
+    client.post("/chat", json={"message": "summarize todays daily announcments", "history": history}, headers=h)
+    for step in ("draft", "answer"):
+        msgs = fake_llm.calls_for(step)[0]
+        assert len(msgs) == 2 and "No announcements today." not in str(msgs)   # system + the question only
+    assert "Isla Jordan" in fake_llm.calls_for("draft")[0][-1]["content"]
+
+
+def test_old_saved_summaries_are_ignored():
+    assert "#v2#" in router.summary_cache_key("<a>", None)
