@@ -135,7 +135,8 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `ALLOWED_EMAIL_DOMAIN` | `sfhs.com` | Who can sign up |
 | `LLM_MODEL` | `Qwen/Qwen2.5-32B-Instruct-AWQ` | Must match the RunPod endpoint's model |
 | `ANNOUNCE_SENDERS` | `@sfhs.com` | Which senders count as real announcements (comma-separated) |
-| `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements (school time) |
+| `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements every 5 minutes (school time) |
+| `ANNOUNCE_OFF_HOURS_MINUTES` | `60` | How often to check the rest of the day (a question with no email loaded also triggers a check) |
 | `GOOGLE_CLIENT_ID` | blank | Turns on "Continue with Google" (school accounts only) |
 | `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
 | `MENU_URL` | `https://www.sfhs.com/lancer-cafe` | The cafe page the daily menu is read from; blank turns it off |

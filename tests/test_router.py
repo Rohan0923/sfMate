@@ -59,7 +59,8 @@ def test_which_email(monkeypatch):
     (ctx,) = router._announcement_context("what's in today's announcements", [], NOW, announcements.TOPIC_KEYS, 1)[:1]
     assert "sent Thu Oct 8, 2026" in ctx.text and "most recent one" in ctx.text   # today's hasn't come in yet
     (ctx,) = router._announcement_context("did wednesday's announcements mention DECA", [], NOW, announcements.TOPIC_KEYS, 1)
-    assert ctx.text == "There's no Daily Announcements email for Wednesday, October 7, 2026 in sfMate's inbox."
+    assert ctx.text == ("There's no Daily Announcements email for Wednesday, October 7, 2026 in sfMate's inbox "
+                        "(the latest one is from Thu Oct 8, 2026).")
     (ctx,) = router._announcement_context("did thursday's announcements mention DECA", [], NOW, announcements.TOPIC_KEYS, 1)
     assert "sent Thu Oct 8, 2026" in ctx.text and "most recent" not in ctx.text   # last Thursday, not next
 
@@ -158,3 +159,24 @@ def test_a_short_email_comes_with_a_warning(monkeypatch):
     email, _ = router._announcement_context("summarize the announcements", [], NOW, announcements.TOPIC_KEYS, 1)
     assert email.text.count("WARNING: the email sfMate received is only 49 characters") == 1
     assert "Do not fill in anything else." in email.text and "Today is a B2 Schedule" in email.text
+
+
+def test_a_question_with_no_email_loaded_checks_the_inbox_right_then(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "GMAIL_ADDRESS", "sfmate@gmail.com")
+    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "abcdefghijklmnop")
+    monkeypatch.setattr(announcements, "fetch", lambda: [email_on(TODAY)])
+    monkeypatch.setattr(announcements, "_index", lambda items: None)
+    assert announcements.announcements == []   # e.g. right after a deploy
+    (ctx,) = router._announcement_context("did the announcements mention DECA?", [], NOW, announcements.TOPIC_KEYS, 1)
+    assert "Applications are due Friday, October 9th!" in ctx.text
+    assert [a["label"] for a in announcements.announcements] == ["Fri Oct 9, 2026"]
+
+
+def test_inbox_not_read_yet_is_said_plainly(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "GMAIL_ADDRESS", "sfmate@gmail.com")
+    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "abcdefghijklmnop")
+    monkeypatch.setattr(announcements, "fetch", lambda: (_ for _ in ()).throw(TimeoutError("imap")))
+    (ctx,) = router._announcement_context("today's announcements", [], NOW, announcements.TOPIC_KEYS, 1)
+    assert "hasn't been able to read its Daily Announcements inbox yet" in ctx.text

@@ -13,7 +13,7 @@ import numpy as np   # noqa: E402
 import pytest   # noqa: E402
 import sqlalchemy as sa   # noqa: E402
 
-from app import auth, calendars, db, llm, mailer, menu, rag, router, site   # noqa: E402
+from app import announcements, auth, calendars, db, llm, mailer, menu, rag, router, site   # noqa: E402
 
 
 class FakeEmbedder:
@@ -74,6 +74,7 @@ def fresh_state(monkeypatch):
     rag.EXTRA_SOURCES.clear()
     calendars.events, calendars._feeds, calendars._emb_cache, calendars._searchable = [], {}, {}, ([], None)
     menu.sections, menu.fetched_at = [], None
+    announcements.announcements, announcements.last_checked, announcements._last_attempt, announcements._parsed = [], None, 0.0, {}
     monkeypatch.setattr(site, "live_text", site.saved_text)   # no live sfhs.com fetches in tests
     yield
 

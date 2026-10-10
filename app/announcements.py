@@ -21,8 +21,12 @@ SCHOOL_TZ = ZoneInfo(config.SCHOOL_TIMEZONE)
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]   # IMAP dates are English
 
 announcements = []   # recent Daily Announcements, oldest first
+last_checked = None  # when the inbox was last read successfully (None: not yet, e.g. right after a deploy)
 _parsed = {}         # IMAP uid -> announcement (or None if skipped), so each email is downloaded once
 _stop = threading.Event()
+_poll_lock = threading.Lock()
+_last_attempt = 0.0
+ON_DEMAND_COOLDOWN = 60   # seconds between inbox checks triggered by questions
 
 
 def enabled():
@@ -124,7 +128,11 @@ def fetch():
                 continue
             _, msg_data = imap.uid("FETCH", uid, "(BODY.PEEK[])")
             raw = next((part[1] for part in msg_data if isinstance(part, tuple)), None)
-            ann, skipped = parse_email(raw, uid.decode()) if raw else (None, "unreadable")
+            try:
+                ann, skipped = parse_email(raw, uid.decode()) if raw else (None, "unreadable")
+            except Exception as e:   # one odd email must not take the whole inbox down
+                log.error("couldn't read email uid %s: %s: %s", uid.decode(), type(e).__name__, e)
+                continue
             _parsed[uid] = ann
             if skipped and skipped.startswith("sender"):
                 log.warning("skipped an email from %s (add it to ANNOUNCE_SENDERS if it's legit)", skipped[7:])
@@ -144,12 +152,15 @@ def _index(items):
     rag.EXTRA_SOURCES["announcements"] = (chunks, embs)
 
 
-def poll():
-    global announcements
-    items = fetch()
-    if [a["id"] for a in items] != [a["id"] for a in announcements]:
-        new = len({a["id"] for a in items} - {a["id"] for a in announcements})
-        _index(items)
+def poll(index_in_background=False):
+    """Reads the inbox. New emails are usable by the announcement path right away; the search index follows
+    (building it loads the search model, which can take minutes right after a deploy)."""
+    global announcements, last_checked
+    with _poll_lock:
+        items = fetch()
+        last_checked = time.time()
+        if [a["id"] for a in items] == [a["id"] for a in announcements]:
+            return
         known = {a["id"] for a in announcements}
         for a in items:
             if a["id"] not in known:
@@ -159,7 +170,33 @@ def poll():
                 if len(a["text"]) < SHORT_EMAIL:
                     log.warning("announcement email %s is only %d characters: %r", a["label"], len(a["text"]), a["text"][:300])
         announcements = items
-        log.info("%d new announcement email(s); %d in search", new, len(items))
+        log.info("%d new announcement email(s); %d in the inbox", len({a["id"] for a in items} - known), len(items))
+    if index_in_background:
+        threading.Thread(target=_safe_index, args=(items,), daemon=True, name="announcements-index").start()
+    else:
+        _index(items)
+
+
+def _safe_index(items):
+    try:
+        _index(items)
+    except Exception as e:
+        log.error("couldn't add announcements to search: %s: %s", type(e).__name__, e)
+
+
+def refresh_now(reason):
+    """An inbox check right now, when a question needs an email we don't have (at most once a minute)."""
+    global _last_attempt
+    if not enabled() or time.time() - _last_attempt < ON_DEMAND_COOLDOWN:
+        return False
+    _last_attempt = time.time()
+    log.info("checking the inbox now: %s", reason)
+    try:
+        poll(index_in_background=True)
+        return True
+    except Exception as e:
+        log.error("inbox check failed (%s): %s: %s", reason, type(e).__name__, e)
+        return False
 
 
 def todays():
@@ -182,19 +219,22 @@ def in_check_window(now):
     return (now.weekday() < 5 or not config.ANNOUNCE_WEEKDAYS_ONLY) and start <= now.hour < end
 
 
+def _wait_seconds(now):
+    if last_checked is None:
+        return 60   # the inbox has never been read (just deployed, or Gmail was down): keep trying
+    if in_check_window(now):
+        return config.ANNOUNCE_POLL_MINUTES * 60
+    return config.ANNOUNCE_OFF_HOURS_MINUTES * 60   # a late email, or a morning that failed, still gets picked up
+
+
 def _checker(stop):
-    try:
-        poll()   # load the last few weeks right away (after every deploy / restart)
-    except Exception as e:
-        log.error("first announcements check failed: %s: %s", type(e).__name__, e)
-    last = time.time()
-    while not stop.wait(20):
-        if in_check_window(datetime.now(SCHOOL_TZ)) and time.time() - last >= config.ANNOUNCE_POLL_MINUTES * 60:
-            last = time.time()
-            try:
-                poll()
-            except Exception as e:
-                log.error("announcements check failed: %s: %s", type(e).__name__, e)
+    while True:
+        try:
+            poll()
+        except Exception as e:
+            log.error("announcements check failed: %s: %s", type(e).__name__, e)
+        if stop.wait(_wait_seconds(datetime.now(SCHOOL_TZ))):
+            return
 
 
 def start():

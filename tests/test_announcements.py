@@ -190,3 +190,46 @@ def test_content_inside_font_size_zero_cells_is_kept():
     ann, _ = announcements.parse_email(html_email("Daily Announcements", NOW, html).as_bytes(), "1")
     assert "Isla Jordan" in ann["text"] and "whiteboard polls" in ann["text"]
     assert [k for k, _, _ in announcements.split_sections(ann["text"])] == announcements.TOPIC_KEYS
+
+
+# ---------- the inbox is never left empty ----------
+def test_poll_publishes_emails_before_building_the_search_index(monkeypatch):
+    real = {"id": "<real>", "sent": NOW, "label": "x", "text": SAMPLE}
+    monkeypatch.setattr(announcements, "fetch", lambda: [real])
+    seen_when_indexing = []
+    monkeypatch.setattr(announcements, "_index", lambda items: seen_when_indexing.append(list(announcements.announcements)))
+    announcements.poll()
+    assert seen_when_indexing == [[real]]   # already published when the (slow) indexing started
+    assert announcements.last_checked is not None
+
+
+def test_one_unreadable_email_doesnt_block_the_rest(monkeypatch):
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(config, "GMAIL_ADDRESS", "sfmate@gmail.com")
+    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "abcdefghijklmnop")
+    FakeIMAP.mailbox = {b"1": b"garbage", b"2": make_email("Daily Announcements", "news@sfhs.com", NOW, "Picture day is tomorrow.")}
+    real_parse = announcements.parse_email
+    monkeypatch.setattr(announcements, "parse_email", lambda raw, uid: (_ for _ in ()).throw(ValueError("bad")) if uid == "1" else real_parse(raw, uid))
+    assert [a["text"] for a in announcements.fetch()] == ["Picture day is tomorrow."]
+
+
+def test_check_schedule(monkeypatch):
+    monday_9am = datetime(2026, 10, 5, 9, tzinfo=announcements.SCHOOL_TZ)
+    monday_9pm = datetime(2026, 10, 5, 21, tzinfo=announcements.SCHOOL_TZ)
+    assert announcements._wait_seconds(monday_9am) == 60              # never read yet: keep trying
+    monkeypatch.setattr(announcements, "last_checked", 1.0)
+    assert announcements._wait_seconds(monday_9am) == 5 * 60          # the morning window
+    assert announcements._wait_seconds(monday_9pm) == 60 * 60         # the rest of the day
+
+
+def test_refresh_now_is_rate_limited(monkeypatch):
+    monkeypatch.setattr(config, "GMAIL_ADDRESS", "sfmate@gmail.com")
+    monkeypatch.setattr(config, "GMAIL_APP_PASSWORD", "abcdefghijklmnop")
+    calls = []
+    monkeypatch.setattr(announcements, "fetch", lambda: calls.append(1) or [])
+    assert announcements.refresh_now("test") is True
+    assert announcements.refresh_now("test") is False   # within the cooldown
+    assert calls == [1]
+    monkeypatch.setattr(announcements, "_last_attempt", 0.0)
+    monkeypatch.setattr(announcements, "fetch", lambda: (_ for _ in ()).throw(imaplib.IMAP4.error("down")))
+    assert announcements.refresh_now("test") is False   # a failure is logged, not raised

@@ -9,6 +9,7 @@
 import hashlib
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -125,10 +126,16 @@ def _announcement_context(question, history, now, prefs, n, ann=None, summary=No
         if day > today and re.fullmatch(rf"(this |coming )?({dates.WD})", tf.phrase):
             day -= timedelta(days=7)   # announcements are never in the future: "wednesday's" means the last one
         # "today's announcements" before today's email arrives: give the latest one (with a note). Another day: exact.
-        ann, note_text = announcements.for_date(day, exact=bool(tf) and day != today)
+        exact = bool(tf) and day != today
+        ann, note_text = announcements.for_date(day, exact=exact)
+        if not ann and announcements.refresh_now(f"no email for {day} when asked {question[:60]!r}"):
+            ann, note_text = announcements.for_date(day, exact=exact)   # the inbox was just re-read
         if not ann:
-            return [Context("announcements", f"There's no Daily Announcements email for {dates.long_day(day)} "
-                                             f"in sfMate's inbox.", [], note=ANNOUNCE_DETAIL_NOTE)]
+            inbox = announcements.announcements
+            log.warning("no announcement email for %s: the inbox has %d email(s)%s; last read: %s", day, len(inbox),
+                        f", latest {inbox[-1]['label']}" if inbox else "",
+                        "never" if announcements.last_checked is None else time.strftime("%H:%M:%S", time.localtime(announcements.last_checked)))
+            return [Context("announcements", _missing_text(day), [], note=ANNOUNCE_DETAIL_NOTE)]
     summary = announcements.wants_summary(question) if summary is None else summary
     title = f"Daily Announcements · {ann['label']}"
     head = f"[{n}] Daily Announcements email, sent {ann['label']}." + (f" ({note_text})" if note_text else "")
@@ -161,6 +168,15 @@ def _announcement_context(question, history, now, prefs, n, ann=None, summary=No
     lunch_text, lunch_sources = menu.day_block(ann["sent"].date(), today, n + 1)
     contexts.append(Context("menu", lunch_text, lunch_sources, note="Include that day's lunch from the cafe menu."))
     return contexts
+
+
+def _missing_text(day):
+    if announcements.last_checked is None and announcements.enabled():
+        return ("sfMate hasn't been able to read its Daily Announcements inbox yet (it keeps trying). Tell the student "
+                "the announcements aren't loaded right now and to ask again in a minute or two.")
+    inbox = announcements.announcements
+    text = f"There's no Daily Announcements email for {dates.long_day(day)} in sfMate's inbox"
+    return text + (f" (the latest one is from {inbox[-1]['label']})." if inbox else ".")
 
 
 def build(categories, question, history, now, prefs):

@@ -50,6 +50,7 @@ ANNOUNCE_SENDERS = [s.strip().lower() for s in _env("ANNOUNCE_SENDERS", "@sfhs.c
 ANNOUNCE_KEEP_DAYS = int(_env("ANNOUNCE_KEEP_DAYS", "21"))
 ANNOUNCE_POLL_MINUTES = float(_env("ANNOUNCE_POLL_MINUTES", "5"))
 ANNOUNCE_HOURS = tuple(int(h) for h in _env("ANNOUNCE_HOURS", "7-11").split("-"))   # check from 7:00 until 11:00
+ANNOUNCE_OFF_HOURS_MINUTES = float(_env("ANNOUNCE_OFF_HOURS_MINUTES", "60"))   # how often to check the rest of the day
 ANNOUNCE_WEEKDAYS_ONLY = _env("ANNOUNCE_WEEKDAYS_ONLY", "true").lower() == "true"
 SCHOOL_TIMEZONE = _env("SCHOOL_TIMEZONE", "America/Los_Angeles")
 
