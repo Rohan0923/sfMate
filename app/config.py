@@ -67,3 +67,7 @@ CALENDAR_REFRESH_MINUTES = float(_env("CALENDAR_REFRESH_MINUTES", "30"))
 # Lancer Cafe menu page (read live); "" turns it off
 MENU_URL = _env("MENU_URL", "https://www.sfhs.com/lancer-cafe")
 MENU_REFRESH_MINUTES = float(_env("MENU_REFRESH_MINUTES", "120"))
+
+# Clubs & Activities page (read live, its 7 dropdowns split into clubs); "" turns it off
+CLUBS_URL = _env("CLUBS_URL", "https://www.sfhs.com/clubs-and-activities")
+CLUBS_REFRESH_MINUTES = float(_env("CLUBS_REFRESH_MINUTES", "360"))

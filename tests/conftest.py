@@ -7,13 +7,13 @@ import zlib
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ.update(DATABASE_URL=f"sqlite:///{_db.name}", APP_ENV="development",
                   GMAIL_ADDRESS="", GMAIL_APP_PASSWORD="", GOOGLE_CLIENT_ID="", DAILY_MESSAGE_LIMIT="5",
-                  CALENDAR_ICS_URLS="", MENU_URL="")   # no network in tests; the calendar and menu tests feed in their own
+                  CALENDAR_ICS_URLS="", MENU_URL="", CLUBS_URL="")   # no network in tests; the calendar and menu tests feed in their own
 
 import numpy as np   # noqa: E402
 import pytest   # noqa: E402
 import sqlalchemy as sa   # noqa: E402
 
-from app import announcements, auth, calendars, db, llm, mailer, menu, rag, router, site   # noqa: E402
+from app import announcements, auth, calendars, clubs, db, llm, mailer, menu, rag, router, site   # noqa: E402
 
 
 class FakeEmbedder:
@@ -74,6 +74,7 @@ def fresh_state(monkeypatch):
     rag.EXTRA_SOURCES.clear()
     calendars.events, calendars._feeds, calendars._emb_cache, calendars._searchable = [], {}, {}, ([], None)
     menu.sections, menu.fetched_at = [], None
+    clubs.clubs, clubs.groups, clubs.intro, clubs.fetched_at, clubs._embs, clubs._emb_cache = [], [], "", None, None, {}
     announcements.announcements, announcements.last_checked, announcements._last_attempt, announcements._parsed = [], None, 0.0, {}
     monkeypatch.setattr(site, "live_text", site.saved_text)   # no live sfhs.com fetches in tests
     yield

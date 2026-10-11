@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import timedelta
 
-from . import announcements, dates, llm, menu, prompts, rag, schedule, site
+from . import announcements, clubs, dates, llm, menu, prompts, rag, schedule, site
 from .calendars import _clock
 
 log = logging.getLogger("sfmate.router")
@@ -200,7 +200,11 @@ def build(categories, question, history, now, prefs):
             contexts.append(_rag_context("rules", question, n, "Student-Parent Handbook",
                                          "The 2026-27 Student-Parent Handbook", RULES_NOTE))
         elif cat == "clubs":
-            contexts.append(_site_context("clubs", question, n, site.CLUB_PAGES))
+            found = clubs.context(question, n)
+            if found:   # the Clubs & Activities page; if it isn't loaded yet, the club pages on sfhs.com
+                contexts.append(Context("clubs", found[0], found[1], falls_back=True, note=clubs.NOTES))
+            else:
+                contexts.append(_site_context("clubs", question, n, site.CLUB_PAGES))
         else:
             contexts.append(_site_context("misc", question, n))
     return contexts
