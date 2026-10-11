@@ -47,7 +47,7 @@ HINTS = [
 ]
 STOP = set("when what where which whose next last first school schools there have does will this that with from "
            "about upcoming coming time date dates days week weeks year happening going event events calendar "
-           "anything something more much many long until does doing is are was were the and for".split())
+           "anything something more much many long until does doing is are was were the and for period periods".split())
 
 
 def wants_schedule(text, today):

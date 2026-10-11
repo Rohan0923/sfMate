@@ -114,7 +114,9 @@ def _rules(today):
         (r"\b(?:this )?weekend\b", lambda m: (max(sat, today) if today.weekday() >= 5 else sat, sat + timedelta(days=1))),
         (r"\bnext week\b", lambda m: (_week_start(today) + timedelta(days=7), _week_start(today) + timedelta(days=13))),
         (r"\blast week\b", lambda m: (_week_start(today) - timedelta(days=7), _week_start(today) - timedelta(days=1))),
-        (r"\b(?:this|the rest of the) week\b", lambda m: (today, _week_start(today) + timedelta(days=6))),
+        # on a weekend, "this week" means the coming school week (plus the rest of the weekend)
+        (r"\b(?:this|the rest of the) week\b",
+         lambda m: (today, _week_start(today) + timedelta(days=13 if today.weekday() >= 5 else 6))),
         (rf"\b(?:(?P<which>next|last|this|coming)\s+)?(?P<wd>{WD})\b",
          lambda m: (_weekday(m["which"], m["wd"], today),) * 2),
         (rf"\b(?P<mon>{MO})\.?\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\b(?:,?\s+(?P<year>20\d\d))?", explicit_date),

@@ -60,7 +60,8 @@ def d(month, day, year=2026):
     (SAT, "next weekend", d(10, 17), d(10, 18)),
     (SAT, "monday", d(10, 12), d(10, 12)),
     (SAT, "next monday", d(10, 12), d(10, 12)),
-    (SAT, "this week", d(10, 10), d(10, 11)),
+    (SAT, "this week", d(10, 10), d(10, 18)),                   # weekend: the coming school week too
+    (SUN, "upcoming events this week?", d(10, 11), d(10, 18)),
     (SUN, "this weekend", d(10, 11), d(10, 11)),
     (SUN, "last weekend", d(10, 3), d(10, 4)),
     (SUN, "next week", d(10, 12), d(10, 18)),

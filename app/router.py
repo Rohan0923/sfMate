@@ -22,7 +22,7 @@ CATEGORIES = {
     "announcements": "the Daily Announcements emails: today's or recent announcements, birthdays, what was announced, "
                      "summaries of the announcements",
     "calendar": "dates and the school schedule: whether there's school, day types (G1, B1, G2, B2, L1, L2, A1-A4), "
-                "breaks, finals, liturgies, when school events happen",
+                "holidays and breaks, finals, liturgies, when grading periods end, when school events happen",
     "courses": "classes and course planning: course descriptions, prerequisites, honors and AP, graduation "
                "requirements, choosing or scheduling classes",
     "rules": "school rules and policies (the Student-Parent Handbook): dress code, phones, attendance, tardies, "

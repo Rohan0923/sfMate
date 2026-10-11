@@ -112,7 +112,9 @@
     border-radius: 14px; text-align: left; font-size: 15px; line-height: 1.55; color: var(--text);
   }
   .welcome-note[hidden] { display: none; }
-  .suggestions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; text-align: left; }
+  .suggestions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: left; }   /* 6 tiles: 3 x 2 */
+  @media (max-width: 640px) { .suggestions { grid-template-columns: repeat(2, 1fr); } }                 /* 2 x 3 */
+  @media (max-width: 380px) { .suggestions { grid-template-columns: 1fr; } }
   .suggestion {
     border: 1px solid var(--border); background: var(--panel); border-radius: 12px; padding: 12px 14px;
     cursor: pointer; font-size: 14px; color: var(--text); text-align: left;
@@ -191,10 +193,12 @@
 
 <script>
 const SUGGESTIONS = [
-  "What financial aid options are there?",
-  "Can I have my phone out at a school dance?",
-  "What's the dress code?",
-  "How many service hours do I need to graduate?",
+  "When is the next liturgy?",
+  "Announcement summary",
+  "What's on the menu?",
+  "Upcoming events this week?",
+  "When's the next school holiday?",
+  "When does the grading period end?",
 ];
 const HISTORY_TURNS = 6;   // messages of context sent with each question (server keeps the last 6 too)
 
