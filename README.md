@@ -13,7 +13,7 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
                 │    calendar      → school calendars (Activities & Events, School Schedule; every 30 min)
                 │    courses       → Course Scheduling Guide        rules → Student-Parent Handbook
                 │    menu          → Lancer Cafe menu (live, every 2 hours)
-                │    clubs         → sfhs.com/clubs-and-activities: all 7 dropdowns, split into clubs (live)
+                │    clubs         → sfhs.com/clubs-affinity-groups: all 7 dropdowns, clubs + moderators (live)
                 │    misc          → the best sfhs.com pages, read whole (live)
                 ├─ reads Daily Announcements / sends sign-up codes ──► sfMate Gmail
                 └─ asks the model ──► RunPod Serverless (vLLM, Qwen2.5-32B), scales to zero
@@ -140,7 +140,7 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `ANNOUNCE_OFF_HOURS_MINUTES` | `60` | How often to check the rest of the day (a question with no email loaded also triggers a check) |
 | `GOOGLE_CLIENT_ID` | blank | Turns on "Continue with Google" (school accounts only) |
 | `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
-| `CLUBS_URL` | `https://www.sfhs.com/clubs-and-activities` | The clubs page (its 7 dropdowns); blank turns it off |
+| `CLUBS_URL` | `https://www.sfhs.com/clubs-affinity-groups` | The clubs page (its 7 dropdowns, with moderators); blank turns it off |
 | `MENU_URL` | `https://www.sfhs.com/lancer-cafe` | The cafe page the daily menu is read from; blank turns it off |
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
@@ -176,7 +176,7 @@ app/announcements.py  Gmail reader + schedule
 app/calendars.py      school calendar feeds
 app/router.py         every question: classify -> read only that source -> draft -> check -> answer
 app/schedule.py       calendar path: exact dates, the next 14 days, scanning the rest of the year
-app/clubs.py          the Clubs & Activities page: 7 dropdowns read live and split into clubs
+app/clubs.py          the Clubs & Affinity Groups page: 7 dropdowns read live, split into clubs with moderators
 app/site.py           Misc: the best sfhs.com pages, read whole and live
 app/dates.py          "next Friday", "this weekend", "Oct 12" -> exact dates
 app/menu.py           Lancer Cafe menu: read live, answered by day

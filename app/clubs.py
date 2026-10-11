@@ -1,8 +1,9 @@
-"""The clubs path: sfhs.com/clubs-and-activities, read live and split into individual clubs.
+"""The clubs path: sfhs.com/clubs-affinity-groups, read live and split into individual clubs.
 
 The page has 7 dropdowns (Activity Clubs, Trial Clubs, Leadership Groups, Performance Groups, Spirit Groups, Affinity
 Groups, Honor Societies). Their contents are all in the page's HTML: each club is a card with a bold name, sometimes
-an italic subtitle like "(Associated Student Body)", and a description. Too much to hand the model at once, so a
+an italic subtitle like "(Associated Student Body)", a "Moderator:" line (linked to their school email), sometimes
+Website/Instagram links, and a description. Too much to hand the model at once, so a
 question gets the full list of names (complete, for "is there a ... club?") plus the details of the clubs it's about."""
 import logging
 import re
@@ -36,7 +37,7 @@ GROUP_WORDS = [   # words in a question -> a dropdown it's asking about as a who
     (re.compile(r"honou?r (societ(y|ies)|groups?)", re.I), "Honor Societies"),
 ]
 
-clubs = []        # [{"group", "name", "subtitle", "description"}], page order
+clubs = []        # [{"group", "name", "subtitle", "moderator", "emails", "links", "description"}], page order
 groups = []       # dropdown names, page order
 intro = ""        # the paragraph above the dropdowns
 fetched_at = None
@@ -65,23 +66,47 @@ def parse_page(html):
         found_groups.append(group)
         cards = td.find_all("div", class_="acc-card")
         if not cards:   # the dropdown isn't made of cards anymore: keep its text whole rather than lose it
-            found.append({"group": group, "name": group, "subtitle": "", "description": _text(td)[:3000]})
+            found.append(_club(group, group, description=_text(td)[:3000]))
             continue
         for card in cards:
-            paragraphs = [" ".join(p.get_text(" ").split()) for p in card.find_all("p")]
-            paragraphs = list(dict.fromkeys(p for p in paragraphs if p))   # nested wrappers repeat paragraphs
-            if not paragraphs:
-                continue
-            name, rest = paragraphs[0], paragraphs[1:]
-            subtitle = next((p for p in rest if p.startswith("(") and p.endswith(")")), "")
-            description = "\n".join(p for p in rest if p != subtitle)
-            found.append({"group": group, "name": name, "subtitle": subtitle, "description": description})
+            club = _parse_card(group, card)
+            if club:
+                found.append(club)
     content = soup.find("table", class_="site-table-content")
     return found_groups, found, (_text(content)[:INTRO_CHARS] if content else "")
 
 
+def _club(group, name, subtitle="", moderator="", emails=(), links=(), description=""):
+    return {"group": group, "name": name, "subtitle": subtitle, "moderator": moderator, "emails": list(emails),
+            "links": list(links), "description": description}
+
+
+def _parse_card(group, card):
+    """One club card: bold name, optional (subtitle), "Moderator(s): …" with mailto links, link-only lines, description."""
+    seen, name, subtitle, moderator, emails, links, description = set(), "", "", "", [], [], []
+    for p in card.find_all("p"):
+        text = " ".join(p.get_text(" ").split())
+        if not text or text in seen:   # nested wrappers repeat paragraphs
+            continue
+        seen.add(text)
+        anchors = [a for a in p.find_all("a") if a.get("href")]
+        if not name:
+            name = text
+        elif not subtitle and text.startswith("(") and text.endswith(")"):
+            subtitle = text
+        elif re.match(r"moderators?\s*:", text, re.I):
+            moderator = re.sub(r"^moderators?\s*:\s*", "", text, flags=re.I).replace(" | ", ", ")
+            emails += [a["href"][7:].split("?")[0] for a in anchors if a["href"].lower().startswith("mailto:")]
+        elif anchors and text == " ".join(" ".join(a.get_text(" ").split()) for a in anchors):   # a line of just links
+            links += [(" ".join(a.get_text(" ").split()), a["href"]) for a in anchors]
+        else:
+            description.append(text)
+    return _club(group, name, subtitle, moderator, emails, links, "\n".join(description)) if name else None
+
+
 def _entry_text(club):
-    return f"{club['group']}: {club['name']} {club['subtitle']}\n{club['description']}".strip()
+    return (f"{club['group']}: {club['name']} {club['subtitle']}\nModerator: {club['moderator']}\n"
+            f"{club['description']}").strip()
 
 
 def refresh():
@@ -127,12 +152,16 @@ def _words(text):
     return {w for w in re.findall(r"[a-z0-9&]+", text.lower()) if len(w) >= 2 and w not in GENERIC}
 
 
+TITLES = {"mr", "mrs", "ms", "dr", "br", "fr", "sr", "coach"}
+
+
 def _by_name(question, club):
-    """The question names this club: a distinctive word of its name or subtitle, or its acronym."""
+    """The question names this club (a distinctive word of its name or subtitle, or its acronym) or its moderator."""
     asked = _words(question)
     name_words = {w for w in _words(f"{club['name']} {club['subtitle']}") if len(w) >= 3 or w.isupper()}
     acronyms = {a.lower() for a in re.findall(r"\(([A-Za-z&]{2,6})\)", club["name"] + club["subtitle"])}
-    return bool((name_words | acronyms) & asked)
+    moderator_names = {w for w in _words(club["moderator"]) if len(w) >= 3 and w not in TITLES}
+    return bool((name_words | acronyms | moderator_names) & asked)
 
 
 def pick(question, k=6):
@@ -148,17 +177,22 @@ def pick(question, k=6):
 
 
 def _detail(club):
-    head = f"{club['name']} {club['subtitle']}".strip() + f" — {club['group']}"
-    return f"- {head}\n  {club['description'] or '(no description on the page)'}".replace("\n", "\n  ")
+    lines = [f"- {club['name']} {club['subtitle']}".rstrip() + f" — {club['group']}"]
+    if club["moderator"]:
+        lines.append(f"  Moderator: {club['moderator']}" + (f" ({', '.join(club['emails'])})" if club["emails"] else ""))
+    if club["links"]:
+        lines.append("  Links: " + "; ".join(f"{label}: {url}" for label, url in club["links"]))
+    lines.append("  " + (club["description"] or "(no description on the page)").replace("\n", "\n  "))
+    return "\n".join(lines)
 
 
 def context(question, first_n=1):
     """(text, sources). None if the page hasn't been read yet."""
     if not clubs:
         return None
-    source = [{"n": first_n, "title": "Clubs & Activities", "url": config.CLUBS_URL}]
+    source = [{"n": first_n, "title": "Clubs & Affinity Groups", "url": config.CLUBS_URL}]
     when = f"{fetched_at:%a %b} {fetched_at.day}" if fetched_at else ""
-    out = [f"[{first_n}] The Clubs & Activities page on sfhs.com (read {when}), which has these dropdowns: "
+    out = [f"[{first_n}] The Clubs & Affinity Groups page on sfhs.com (read {when}), which has these dropdowns: "
            + ", ".join(groups) + "."]
     if intro:
         out += ["", intro]
@@ -178,7 +212,8 @@ def context(question, first_n=1):
 
 
 NOTES = (
-    "The source is the Clubs & Activities page on sfhs.com. Its list of every club and group is complete: if a club "
-    "isn't on it, say the page doesn't list it (don't guess that it exists). Say which dropdown a club is in (like "
-    "Affinity Groups or Trial Clubs). Some clubs have no description on the page; say so instead of making one up."
+    "The source is the Clubs & Affinity Groups page on sfhs.com. Its list of every club and group is complete: if a "
+    "club isn't on it, say the page doesn't list it (don't guess that it exists). Say which dropdown a club is in (like "
+    "Affinity Groups or Trial Clubs). Give the moderator (and their email, if listed) when it helps, like for joining "
+    "or contacting a club. Some clubs have no description on the page; say so instead of making one up."
 )
