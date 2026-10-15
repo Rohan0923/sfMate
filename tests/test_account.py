@@ -60,6 +60,21 @@ def test_delete_account_removes_everything(client, make_user, feedback_mail):
     make_user()   # the same email can sign up again
 
 
+# ---------- permission to send questions to the AI provider ----------
+def test_ai_consent_given_withdrawn_and_deleted_with_the_account(client, make_user):
+    h = make_user()
+    assert client.post("/consent", json={"accepted": True}).status_code == 401
+    assert client.get("/auth/me", headers=h).json()["ai_consent"] is False
+    assert client.post("/consent", json={"accepted": True}, headers=h).json() == {"ok": True}
+    client.post("/consent", json={"accepted": True}, headers=h)   # twice is fine
+    assert client.get("/auth/me", headers=h).json()["ai_consent"] is True
+    client.post("/consent", json={"accepted": False}, headers=h)
+    assert client.get("/auth/me", headers=h).json()["ai_consent"] is False
+    client.post("/consent", json={"accepted": True}, headers=h)
+    client.delete("/account", headers=h)
+    assert rows(db.ai_consent) == []
+
+
 # ---------- the App Store review account ----------
 @pytest.fixture
 def review(monkeypatch):

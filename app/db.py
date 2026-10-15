@@ -61,6 +61,13 @@ feedback = sa.Table(   # "Send feedback" in the app; each one is also emailed to
 )
 
 
+ai_consent = sa.Table(   # the student agreed, in the app, to questions being sent to the AI provider (RunPod)
+    "ai_consent", metadata,
+    sa.Column("username", sa.String(255), sa.ForeignKey("users.username", ondelete="CASCADE"), primary_key=True),
+    sa.Column("accepted_at", sa.Float, nullable=False),
+)
+
+
 def _normalize(url):
     # Render hands out postgres:// URLs; SQLAlchemy wants postgresql+psycopg://
     for prefix in ("postgres://", "postgresql://"):

@@ -192,7 +192,20 @@ def logout(authorization: str = Header(default="")):
 @app.get("/auth/me")
 def me(user=Depends(auth.current_user)):
     return {"name": user["name"], "username": user["username"], "email": user["email"],
-            "setup_done": user["profile"] is not None, "profile": user["profile"]}
+            "setup_done": user["profile"] is not None, "profile": user["profile"],
+            "ai_consent": auth.has_ai_consent(user["username"])}
+
+
+class ConsentRequest(BaseModel):
+    accepted: bool
+
+
+@app.post("/consent")
+def consent(req: ConsentRequest, user=Depends(auth.current_user)):
+    """The app's "sfMate uses AI" screen: agreeing (or withdrawing) to questions being sent to RunPod."""
+    auth.set_ai_consent(user["username"], req.accepted)
+    log.info("AI consent %s: %s", "given" if req.accepted else "withdrawn", user["username"])
+    return {"ok": True}
 
 
 @app.get("/health")

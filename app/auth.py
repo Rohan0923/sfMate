@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from fastapi import Header, HTTPException
 
 from . import config, mailer
-from .db import engine, feedback, pending_signups, sessions, usage, users
+from .db import ai_consent, engine, feedback, pending_signups, sessions, usage, users
 
 log = logging.getLogger("sfmate.auth")
 
@@ -239,11 +239,24 @@ def seed_review_account():
             log.info("updated the review account's password")
 
 
+# ---------- permission to send questions to the AI provider (the app asks before the first question) ----------
+def has_ai_consent(username):
+    with engine.begin() as conn:
+        return conn.execute(sa.select(ai_consent.c.username).where(ai_consent.c.username == username)).first() is not None
+
+
+def set_ai_consent(username, accepted):
+    with engine.begin() as conn:
+        conn.execute(ai_consent.delete().where(ai_consent.c.username == username))
+        if accepted:
+            conn.execute(ai_consent.insert().values(username=username, accepted_at=time.time()))
+
+
 # ---------- deleting an account ----------
 def delete_account(user):
     """Everything tied to the student. Shared announcement summaries are per topic set, not anyone's, so they stay."""
     with engine.begin() as conn:
-        for table in (feedback, usage, sessions):
+        for table in (feedback, usage, sessions, ai_consent):
             conn.execute(table.delete().where(table.c.username == user["username"]))
         conn.execute(pending_signups.delete().where(pending_signups.c.email == user["email"]))
         conn.execute(users.delete().where(users.c.username == user["username"]))
