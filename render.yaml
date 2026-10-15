@@ -38,6 +38,10 @@ services:
         value: "40"
       - key: GOOGLE_CLIENT_ID   # optional; leave blank to keep Google sign-in off
         sync: false
+      - key: REVIEW_USERNAME    # App Store review account (no emailed code); leave both blank for none
+        sync: false
+      - key: REVIEW_PASSWORD
+        sync: false
 
 databases:
   - name: sfmate-db

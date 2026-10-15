@@ -40,6 +40,14 @@ SESSION_DAYS = int(_env("SESSION_DAYS", "30"))
 DAILY_MESSAGE_LIMIT = int(_env("DAILY_MESSAGE_LIMIT", "40"))   # per student per day; keeps the GPU bill in check
 GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID")   # optional; "" turns Google sign-in off
 
+# App Store review account: Apple's reviewers can't get an @sfhs.com code, so with both set this account exists
+# (no email needed) with this password. Blank = no review account.
+REVIEW_USERNAME = _env("REVIEW_USERNAME").lower()
+REVIEW_PASSWORD = _env("REVIEW_PASSWORD")
+
+# Shown on /support and /privacy; feedback from the app is emailed here
+SUPPORT_EMAIL = _env("SUPPORT_EMAIL", "reach.rohans@gmail.com")
+
 # The sfMate Gmail account: reads Daily Announcements (IMAP) and sends verification codes (SMTP)
 GMAIL_ADDRESS = _env("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = _env("GMAIL_APP_PASSWORD").replace(" ", "")   # Google shows it in groups of 4

@@ -1,21 +1,23 @@
 """sfMate web server.
 
-Pages:  /  home    /login  sign up & log in    /setup  first-time profile    /app  the chatbot
-API:    /auth/*  accounts    /profile    /welcome    /chat (streamed)    /announcements/*
+Pages:  /  home    /login  sign up & log in    /setup  first-time profile    /app  the chatbot    /privacy    /support
+API:    /auth/*  accounts    /account (DELETE)    /profile    /welcome    /chat (streamed)    /announcements/*
+        /reminders and /feedback (iPhone app)
 """
 import json
 import logging
 import threading
 import time
 from contextlib import asynccontextmanager
+from html import escape
 
 import sqlalchemy as sa
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, clubs, config, llm, menu, prompts, rag, router
-from .db import announcement_summaries, engine, usage, users
+from . import announcements, auth, calendars, clubs, config, llm, mailer, menu, prompts, rag, reminders, router
+from .db import announcement_summaries, engine, feedback, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("sfmate")
@@ -24,6 +26,7 @@ log = logging.getLogger("sfmate")
 @asynccontextmanager
 async def lifespan(app):
     rag.load_index()
+    auth.seed_review_account()
     threading.Thread(target=rag.embedder, daemon=True).start()   # load the search model now, not on the first question
     announcements.start()
     calendars.start()
@@ -81,8 +84,11 @@ def update_user(username, **values):
 
 
 # ---------- pages ----------
-def page(name):
+def page(name, **values):
+    """A page from app/static; {{key}} placeholders are filled from `values`."""
     html = (config.STATIC_DIR / name).read_text(encoding="utf-8")
+    for key, value in values.items():
+        html = html.replace("{{" + key + "}}", escape(str(value)))
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
@@ -100,6 +106,15 @@ def setup_page(): return page("setup.html")
 
 @app.get("/app")
 def chat_page(): return page("SFmate.html")
+
+
+@app.get("/privacy")
+def privacy_page(): return page("privacy.html", support_email=config.SUPPORT_EMAIL)
+
+
+@app.get("/support")
+def support_page():
+    return page("support.html", support_email=config.SUPPORT_EMAIL, daily_limit=config.DAILY_MESSAGE_LIMIT)
 
 
 @app.get("/healthz")
@@ -182,6 +197,14 @@ def me(user=Depends(auth.current_user)):
 
 @app.get("/health")
 def health(user=Depends(auth.current_user)):
+    return {"ok": True}
+
+
+@app.delete("/account")
+def delete_account(user=Depends(auth.current_user)):
+    """Deletes the account and everything tied to it, right away (the app's Delete account)."""
+    auth.delete_account(user)
+    log.info("account deleted: %s", user["username"])
     return {"ok": True}
 
 
@@ -313,3 +336,31 @@ def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_use
             pass   # two students said yes at the same moment; the first summary saved wins
 
     return stream_response(None, router.announcement_summary(a, user["profile"]), on_complete=save)
+
+
+# ---------- liturgy and activity day reminders (the iPhone app schedules them on the phone) ----------
+@app.get("/reminders")
+def upcoming_reminders(user=Depends(auth.current_user)):
+    return {"days": reminders.upcoming(prompts.school_now())}
+
+
+# ---------- feedback (the iPhone app's Send feedback) ----------
+class FeedbackRequest(BaseModel):
+    message: str
+    app_version: str = ""
+
+
+@app.post("/feedback")
+def submit_feedback(req: FeedbackRequest, background: BackgroundTasks, user=Depends(auth.current_user)):
+    message, version = req.message.strip(), req.app_version.strip()[:40]
+    if not message:
+        raise HTTPException(400, "Write something first")
+    if len(message) > 4000:
+        raise HTTPException(400, "That's a bit long, keep it under 4000 characters")
+    auth.feedback_throttle.check(user["username"])
+    with engine.begin() as conn:
+        conn.execute(feedback.insert().values(username=user["username"], message=message, app_version=version,
+                                              created_at=time.time()))
+    background.add_task(mailer.send_feedback, user["username"], user["email"], message, version)   # after replying
+    log.info("feedback from %s (%d characters)", user["username"], len(message))
+    return {"ok": True}

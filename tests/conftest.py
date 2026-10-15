@@ -61,6 +61,7 @@ def fresh_state(monkeypatch):
             conn.execute(table.delete())
     auth.login_throttle.hits.clear()
     auth.signup_throttle.hits.clear()
+    auth.feedback_throttle.hits.clear()
     rag.set_embedder(FakeEmbedder())
     rag.docs = [{"url": "https://x/hb.pdf", "title": "Student-Parent Handbook 2026-27 §4.4 Dances",
                  "text": "phones dance floor tables bleachers"},

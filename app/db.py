@@ -51,6 +51,16 @@ announcement_summaries = sa.Table(   # one shared summary per announcement email
 )
 
 
+feedback = sa.Table(   # "Send feedback" in the app; each one is also emailed to SUPPORT_EMAIL
+    "feedback", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("username", sa.String(255), nullable=False),
+    sa.Column("message", sa.Text, nullable=False),
+    sa.Column("app_version", sa.String(40), nullable=False, default=""),
+    sa.Column("created_at", sa.Float, nullable=False),
+)
+
+
 def _normalize(url):
     # Render hands out postgres:// URLs; SQLAlchemy wants postgresql+psycopg://
     for prefix in ("postgres://", "postgresql://"):

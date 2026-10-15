@@ -1,5 +1,7 @@
-"""Accounts: @sfhs.com sign-up with an emailed code, password login, optional Google sign-in, and sessions."""
+"""Accounts: @sfhs.com sign-up with an emailed code, password login, optional Google sign-in, sessions, the App Store
+review account, and deleting an account."""
 import hashlib
+import logging
 import re
 import secrets
 import threading
@@ -10,7 +12,9 @@ import sqlalchemy as sa
 from fastapi import Header, HTTPException
 
 from . import config, mailer
-from .db import engine, pending_signups, sessions, users
+from .db import engine, feedback, pending_signups, sessions, usage, users
+
+log = logging.getLogger("sfmate.auth")
 
 CODE_TTL = 15 * 60          # verification codes expire after 15 minutes
 CODE_MAX_ATTEMPTS = 5       # wrong guesses before the code is burned
@@ -64,6 +68,7 @@ class Throttle:
 
 login_throttle = Throttle(limit=8, window=15 * 60)      # per IP + login name
 signup_throttle = Throttle(limit=10, window=60 * 60)    # code emails per IP per hour
+feedback_throttle = Throttle(limit=5, window=60 * 60)   # feedback messages per student per hour
 
 
 # ---------- sessions ----------
@@ -195,6 +200,8 @@ def verify_signup(email_raw, code_raw):
 # ---------- login ----------
 def login(login_raw, password, ip):
     login_throttle.check(f"{ip}|{login_raw.strip().lower()}")
+    if config.REVIEW_USERNAME and login_raw.strip().lower() in (config.REVIEW_USERNAME, review_email()):
+        seed_review_account()   # back again if a reviewer tried out Delete account
     with engine.begin() as conn:
         user = find_user(conn, login_raw)
         if user and not user["password_hash"]:
@@ -202,6 +209,44 @@ def login(login_raw, password, ip):
         if not user or not check_password(password, user["password_hash"]):
             raise HTTPException(401, "Wrong username or password")
         return start_session(conn, user)
+
+
+# ---------- the App Store review account ----------
+def review_email():
+    return f"{config.REVIEW_USERNAME}@review.invalid"   # .invalid never delivers, and no one can sign up with it
+
+
+def seed_review_account():
+    """With REVIEW_USERNAME and REVIEW_PASSWORD set, makes sure that account exists with that password (at startup,
+    and when someone logs in with it). It skips the emailed code because Apple's reviewers can't get one."""
+    username, password = config.REVIEW_USERNAME, config.REVIEW_PASSWORD
+    if not (username and password):
+        return
+    if not USERNAME_RE.fullmatch(username):
+        log.error("REVIEW_USERNAME %r isn't a valid username (3–32 of a-z 0-9 . _ -): no review account", username)
+        return
+    with engine.begin() as conn:
+        user = conn.execute(sa.select(users).where(users.c.username == username)).mappings().first()
+        if user and user["email"] != review_email():   # a real student has that name: never touch their account
+            log.error("REVIEW_USERNAME %r belongs to a real account: pick another name", username)
+        elif not user:
+            conn.execute(users.insert().values(
+                username=username, email=review_email(), name="App Review", password_hash=hash_password(password),
+                google_sub=None, profile=None, welcome=None, announcement_answered=None, created_at=time.time()))
+            log.info("created the review account %r", username)
+        elif not check_password(password, user["password_hash"]):
+            conn.execute(users.update().where(users.c.username == username).values(password_hash=hash_password(password)))
+            log.info("updated the review account's password")
+
+
+# ---------- deleting an account ----------
+def delete_account(user):
+    """Everything tied to the student. Shared announcement summaries are per topic set, not anyone's, so they stay."""
+    with engine.begin() as conn:
+        for table in (feedback, usage, sessions):
+            conn.execute(table.delete().where(table.c.username == user["username"]))
+        conn.execute(pending_signups.delete().where(pending_signups.c.email == user["email"]))
+        conn.execute(users.delete().where(users.c.username == user["username"]))
 
 
 # ---------- Google sign-in (optional) ----------

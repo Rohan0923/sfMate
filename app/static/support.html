@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>sfMate - Support</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #faf7f2 0%, #f3ede5 100%);
+      color: #2a1d16;
+      line-height: 1.6;
+    }
+    .container { max-width: 760px; margin: 0 auto; padding: 40px 20px 60px; }
+    .card { background: white; border-radius: 16px; padding: 40px 32px; box-shadow: 0 8px 32px rgba(62, 37, 27, 0.08); }
+    .brand { font-size: 22px; font-weight: 800; color: #b27a3f; text-decoration: none; }
+    h1 { font-size: 28px; color: #3e251b; margin: 12px 0 4px; }
+    h2 { font-size: 18px; color: #3e251b; margin: 32px 0 8px; padding-bottom: 6px; border-bottom: 2px solid #b27a3f; }
+    h3 { font-size: 16px; color: #3e251b; margin: 22px 0 4px; }
+    p { font-size: 15px; margin: 0 0 10px; }
+    a { color: #8a5d2e; }
+    .contact { background: #faf7f2; border: 1px solid #e6ddd2; border-radius: 10px; padding: 16px 18px; margin: 20px 0 0; }
+    .contact a { font-weight: 600; font-size: 16px; }
+    .footer { text-align: center; color: #7d6b5d; font-size: 13px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <a class="brand" href="/">sfMate</a>
+    <h1>Support</h1>
+    <p>sfMate answers Saint Francis High School students' questions about announcements, the school calendar, lunch,
+      clubs, courses, and school rules.</p>
+    <div class="contact">
+      <p>Need help, found a bug, or got a wrong answer? Email
+        <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>
+      <p>In the iPhone app you can also tap the feedback button at the top of the chat.</p>
+    </div>
+
+    <h2>Frequently asked questions</h2>
+
+    <h3>Who can use sfMate?</h3>
+    <p>Saint Francis students. Sign up with your @sfhs.com school email; we email you a 6-digit code to confirm it's
+      yours.</p>
+
+    <h3>I didn't get my sign-up code.</h3>
+    <p>Check your spam or junk folder, and give it a minute. Then tap "Resend code" (you can ask for a new one once a
+      minute). Codes expire after 15 minutes.</p>
+
+    <h3>Why does the first answer take a while?</h3>
+    <p>sfMate's AI goes to sleep when nobody's using it. The first question after a quiet spell wakes it up, which can
+      take a minute or two. After that, answers come quickly.</p>
+
+    <h3>Is there a limit on messages?</h3>
+    <p>Yes: {{daily_limit}} messages per day. They reset at midnight (Pacific time).</p>
+
+    <h3>Can sfMate be wrong?</h3>
+    <p>Yes. sfMate reads the Daily Announcements, the school calendars, the cafe menu, the Student-Parent Handbook, the
+      Course Scheduling Guide, and sfhs.com, and it lists its sources under each answer. AI can still make mistakes, so
+      double-check anything important with the source, a teacher, or the school office.</p>
+
+    <h3>How do I report a wrong or inappropriate answer?</h3>
+    <p>In the iPhone app, tap the feedback button at the top of the chat and tell us what happened (include your
+      question if you can). Or email <a href="mailto:{{support_email}}">{{support_email}}</a>.</p>
+
+    <h3>How do liturgy and activity day reminders work?</h3>
+    <p>In the iPhone app, open the account menu, choose "Profile, topics &amp; reminders", and turn on Liturgy days
+      (L1, L2) and/or Activity days (A1–A4). sfMate sends a notification at 6 PM the day before. Open the app now and
+      then so it picks up days the school adds to the calendar.</p>
+
+    <h3>How do I change my name, grade, or announcement topics?</h3>
+    <p>Open the account menu and choose "Profile, topics &amp; reminders" (on the website, use Profile in the menu).</p>
+
+    <h3>How do I delete my account?</h3>
+    <p>In the iPhone app, open the account menu and tap "Delete account". That deletes your account and its data right
+      away. If you only use the website, email <a href="mailto:{{support_email}}">{{support_email}}</a> from your
+      school email and we'll delete it for you.</p>
+
+    <h3>Is sfMate an official Saint Francis app?</h3>
+    <p>No. sfMate is an independent project and isn't run by Saint Francis High School.</p>
+
+    <h3>What does sfMate do with my information?</h3>
+    <p>See the <a href="/privacy">Privacy Policy</a>.</p>
+  </div>
+  <p class="footer"><a href="/">sfMate</a> · <a href="/privacy">Privacy Policy</a></p>
+</div>
+</body>
+</html>

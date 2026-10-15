@@ -142,6 +142,8 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
 | `CLUBS_URL` | `https://www.sfhs.com/clubs-affinity-groups` | The clubs page (its 7 dropdowns, with moderators); blank turns it off |
 | `MENU_URL` | `https://www.sfhs.com/lancer-cafe` | The cafe page the daily menu is read from; blank turns it off |
+| `SUPPORT_EMAIL` | `reach.rohans@gmail.com` | Shown on /support and /privacy; app feedback is emailed here |
+| `REVIEW_USERNAME`, `REVIEW_PASSWORD` | blank | Both set: an App Store review account that logs in without an emailed code. Recreated if deleted. Change the password after each review |
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
 site's address (for example `https://sfmate.onrender.com`) under **Authorized JavaScript origins**, and set
@@ -162,13 +164,15 @@ site's address (for example `https://sfmate.onrender.com`) under **Authorized Ja
   last copy it got and tries again in 30 minutes.
 - **Menu questions say "no menu posted":** either the cafe hasn't posted that day yet, or the page changed shape. The
   logs say "menu refresh failed" in that case; sfMate keeps the last menu it read.
+- **Feedback from the app:** every message is saved in the `feedback` table and emailed to `SUPPORT_EMAIL`. If the
+  emails stop, the logs say "couldn't email feedback".
 - **Keep the web service at 1 instance.** The announcements checker and login throttling live in memory.
 
 ## What's where
 
 ```
-app/main.py           routes: pages, accounts, profile, welcome, chat, announcements
-app/auth.py           sign-up with emailed codes, login, Google, sessions, throttling
+app/main.py           routes: pages, accounts, profile, welcome, chat, announcements, reminders, feedback
+app/auth.py           sign-up with emailed codes, login, Google, sessions, throttling, review account, deleting accounts
 app/llm.py            RunPod/vLLM client (streaming, cold-start retries)
 app/rag.py            search index + query embedding
 app/prompts.py        persona and every instruction the model gets
@@ -180,8 +184,10 @@ app/clubs.py          the Clubs & Affinity Groups page: 7 dropdowns read live, s
 app/site.py           Misc: the best sfhs.com pages, read whole and live
 app/dates.py          "next Friday", "this weekend", "Oct 12" -> exact dates
 app/menu.py           Lancer Cafe menu: read live, answered by day
+app/reminders.py      L/A days for the iPhone app's 6 PM day-before reminders (the app schedules them itself)
 app/db.py             database tables
-app/static/           the four pages
+app/static/           the pages (home, login, setup, chat, privacy, support)
+questionnaireAnswers.txt  draft answers for App Store Connect's App Privacy questions
 scripts/build_index.py  crawls the site + PDFs, builds data/
 data/                 the search index (committed)
 tests/                pytest suite
