@@ -28,7 +28,7 @@ RUNPOD_API_KEY = _env("RUNPOD_API_KEY")
 RUNPOD_ENDPOINT_ID = _env("RUNPOD_ENDPOINT_ID")
 LLM_BASE_URL = _env("LLM_BASE_URL") or (
     f"https://api.runpod.ai/v2/{RUNPOD_ENDPOINT_ID}/openai/v1" if RUNPOD_ENDPOINT_ID else "")
-LLM_MODEL = _env("LLM_MODEL", "Qwen/Qwen2.5-32B-Instruct-AWQ")   # must match the model the endpoint serves
+LLM_MODEL = _env("LLM_MODEL", "Qwen/Qwen3.5-35B-A3B-FP8")   # must match the model the endpoint serves
 LLM_FIRST_TOKEN_TIMEOUT = int(_env("LLM_FIRST_TOKEN_TIMEOUT", "300"))   # seconds; covers a cold start
 
 # Search index built by scripts/build_index.py

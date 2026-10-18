@@ -27,7 +27,7 @@ services:
       - key: RUNPOD_ENDPOINT_ID
         sync: false
       - key: LLM_MODEL
-        value: Qwen/Qwen2.5-32B-Instruct-AWQ
+        value: Qwen/Qwen3.5-35B-A3B-FP8
       - key: GMAIL_ADDRESS
         sync: false
       - key: GMAIL_APP_PASSWORD

@@ -2,6 +2,9 @@
 
 The endpoint scales to zero, so the first request after a quiet spell waits while a GPU worker starts and loads the
 model (a cold start, often 1-3 minutes). The timeouts and retries below are sized for that.
+
+Qwen3.5 thinks (writes a <think> block) before answering by default; every request turns that off, since the
+classifier's few tokens and the draft's budget would go to thinking instead of the answer.
 """
 import logging
 import time
@@ -53,6 +56,7 @@ def stream_chat(messages, max_tokens=512, temperature=0.3):
             stream = client().chat.completions.create(
                 model=config.LLM_MODEL, messages=messages, stream=True,
                 max_tokens=max_tokens, temperature=temperature, top_p=0.9,
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             for event in stream:
                 if not event.choices:

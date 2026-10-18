@@ -66,6 +66,7 @@ def test_streams_tokens_with_model_and_key():
     assert list(llm.stream_chat([{"role": "user", "content": "hi"}], max_tokens=50)) == ["Hey ", "Lancer", "!"]
     sent = STATE["seen"][-1]
     assert sent["model"] == config.LLM_MODEL and sent["stream"] is True and sent["max_tokens"] == 50
+    assert sent["chat_template_kwargs"] == {"enable_thinking": False}   # Qwen3.5 would otherwise think first
     assert STATE["auth"][-1] == "Bearer rp_test_key"
 
 
