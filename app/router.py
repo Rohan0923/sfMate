@@ -1,6 +1,8 @@
 """Every chat message goes through here:
 
-1. classify it into one category (or two): announcements, calendar, courses, rules, menu, clubs, misc
+1. classify it into one category (or two): announcements, calendar, courses, rules, menu, clubs, misc, general
+   (general: small talk and questions that don't need the school's sources, answered in one step from the
+   model's own knowledge; the rest go through steps 2-5)
 2. read ONLY that category's source (isolated, so two places can't contradict each other)
 3. draft an answer; if the source doesn't have it, fall back to the Misc path (the best sfhs.com pages, read whole)
 4. check the draft against the sources (for calendar answers, against the full entries of the dates it names)
@@ -29,7 +31,10 @@ CATEGORIES = {
              "discipline, academic honesty, rules for dances and events",
     "menu": "food: lunch, breakfast, the Lancer Cafe, snack bar, concessions, prices",
     "clubs": "clubs, activities, affinity groups, intramurals, how to join or start a club",
-    "misc": "anything else about Saint Francis: people and offices, admissions, tuition, campus, history, contacts",
+    "misc": "anything else about Saint Francis itself: people and offices, admissions, tuition, campus, history, "
+            "contacts",
+    "general": "anything that doesn't need Saint Francis's own information: greetings and small talk, advice, "
+               "homework help, general knowledge, places and things to do around Mountain View",
 }
 CLASSIFY_INSTRUCTIONS = (
     "Sort a Saint Francis High School student's question into the category whose source can answer it. "
@@ -79,8 +84,8 @@ def classify(question, history, today):
         found = ["announcements"] + [c for c in found if c != "announcements"]
     if MEAL_WORDS.search(question) and "menu" not in found:
         found = (["announcements", "menu"] if found[:1] == ["announcements"] else ["menu"]) + [c for c in found if c not in ("announcements", "menu")]
-    if len(found) > 1:
-        found = [c for c in found if c != "misc"] or ["misc"]
+    if len(found) > 1:   # misc and general only on their own: a real source beats them
+        found = [c for c in found if c not in ("misc", "general")] or found[:1]
     return found[:2]
 
 
@@ -252,6 +257,16 @@ COURSES_NOTE = ("The only source is the 2026-27 Course Scheduling Guide. Include
                 "levels, prerequisites, and credits when they matter.")
 RULES_NOTE = "The only source is the 2026-27 Student-Parent Handbook. Say which section a rule is from (like §4.4)."
 SITE_NOTE = "The sources are full sfhs.com pages. Read them carefully; if the answer is a link, form, or contact, give it."
+GENERAL_INSTRUCTIONS = (
+    "This message doesn't need Saint Francis's own sources, so answer from your own general knowledge.\n"
+    "- Small talk and greetings: reply briefly and naturally, like a friend would, and keep the conversation going.\n"
+    "- Saint Francis High School is in Mountain View, California. For local questions (food, coffee, places to "
+    "study, things to do), suggest real spots you know in and around Mountain View, then end with a short note that "
+    "your info might be out of date or inaccurate, so they should double-check (like on Google Maps).\n"
+    "- Never make up anything about Saint Francis itself (its dates, rules, classes, clubs, people, or events). If "
+    "they want that, tell them to ask you about it directly, since you look those up in the school's sources.\n"
+    "- Keep it appropriate for a high school student. Don't cite sources with brackets like [1]."
+)
 
 
 def _history(history):
@@ -282,6 +297,12 @@ def check_messages(contexts, extra, draft, question, history, profile, now):
     user = (f"{_now_line(now)}\n\nSources:\n\n{_sources_text(contexts, extra)}\n\nQuestion: {question}\n\n"
             f"Draft answer:\n{draft}")
     return [{"role": "system", "content": system}, *_history(history), {"role": "user", "content": user}]
+
+
+def general_messages(question, history, profile, now):
+    system = prompts.SFMATE_PERSONA + "\n\n" + GENERAL_INSTRUCTIONS + prompts.student_blurb(profile)
+    return [{"role": "system", "content": system}, *_history(history),
+            {"role": "user", "content": f"{_now_line(now)}\n\n{question}"}]
 
 
 def not_found(draft):
@@ -316,6 +337,10 @@ def answer(question, history, profile, now=None):
     now = now or prompts.school_now()
     categories = classify(question, history, now.date())
     log.info("question %r -> %s", question[:80], "+".join(categories))
+    if categories == ["general"]:   # no sources to draft from or check against: one step
+        yield {"sources": []}
+        yield from llm.stream_chat(general_messages(question, history, profile, now), max_tokens=700, temperature=0.6)
+        return
     yield from run(build(categories, question, history, now, prompts.announcement_prefs(profile)),
                    question, history, profile, now)
 

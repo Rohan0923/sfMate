@@ -15,6 +15,7 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
                 │    menu          → Lancer Cafe menu (live, every 2 hours)
                 │    clubs         → sfhs.com/clubs-affinity-groups: all 7 dropdowns, clubs + moderators (live)
                 │    misc          → the best sfhs.com pages, read whole (live)
+                │    general       → no sources: small talk, advice, nearby places (one step)
                 ├─ reads Daily Announcements / sends sign-up codes ──► sfMate Gmail
                 └─ asks the model ──► RunPod Serverless (vLLM, Qwen3.5-35B-A3B FP8), scales to zero
 ```

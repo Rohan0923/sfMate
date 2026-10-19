@@ -18,6 +18,9 @@ TODAY = date(2026, 10, 9)
     ("announcements", "summarize the announcements and lunch", ["announcements", "menu"]),
     ("I think this is about dates", "is there school monday?", ["calendar"]),                # unusable: keyword rules
     ("???", "who is the principal", ["misc"]),
+    ("general", "wassup, detroit?", ["general"]),
+    ("general, menu", "what's good for lunch today?", ["menu"]),                             # general only on its own
+    ("general, misc", "any good coffee shops near school?", ["general"]),
 ])
 def test_classify(fake_llm, question, model_says, expected):
     fake_llm.category = model_says
@@ -103,6 +106,20 @@ def test_courses_not_found_falls_back_to_sfhs_com(monkeypatch, client, make_user
     assert [e["sources"][0]["title"] for e in events if "sources" in e] == [
         "Course Scheduling Guide 2026-27 · 653 AP Chemistry", "Admissions"]
     assert len(fake_llm.calls_for("draft")) == 2
+
+
+def test_general_questions_skip_the_sources(monkeypatch, client, make_user, fake_llm):
+    monkeypatch.setattr(prompts, "school_now", lambda: NOW)
+    h = make_user()
+    client.post("/profile", json={"first_name": "Rohan", "grade": 11}, headers=h)
+    fake_llm.category = "general"
+    events = sse_events(client.post("/chat", json={"message": "any good coffee shops near saint francis?"}, headers=h).text)
+    assert events[0] == {"sources": []}
+    assert "".join(e.get("delta", "") for e in events) == "Phones stay off the dance floor [1]."
+    assert [fake_llm.step(m) for m in fake_llm.calls] == ["classify", "answer"]   # no draft, no check
+    (msgs,) = fake_llm.calls_for("answer")
+    assert "Mountain View" in msgs[0]["content"] and "grade 11 (junior)" in msgs[0]["content"]
+    assert "Sources:" not in msgs[-1]["content"] and msgs[-1]["content"].endswith("any good coffee shops near saint francis?")
 
 
 def test_summary_cache_key_depends_on_topics():
