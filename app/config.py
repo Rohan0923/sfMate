@@ -30,6 +30,7 @@ LLM_BASE_URL = _env("LLM_BASE_URL") or (
     f"https://api.runpod.ai/v2/{RUNPOD_ENDPOINT_ID}/openai/v1" if RUNPOD_ENDPOINT_ID else "")
 LLM_MODEL = _env("LLM_MODEL", "Qwen/Qwen3.5-35B-A3B-FP8")   # must match the model the endpoint serves
 LLM_FIRST_TOKEN_TIMEOUT = int(_env("LLM_FIRST_TOKEN_TIMEOUT", "300"))   # seconds; covers a cold start
+LLM_WARMUP_INTERVAL = int(_env("LLM_WARMUP_INTERVAL", "300"))   # seconds; at most one warm-up ping per this long
 
 # Search index built by scripts/build_index.py
 EMBED_MODEL_ID = "BAAI/bge-base-en-v1.5"

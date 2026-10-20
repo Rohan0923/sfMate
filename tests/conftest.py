@@ -59,6 +59,7 @@ def fresh_state(monkeypatch):
     with db.engine.begin() as conn:   # empty every table between tests
         for table in reversed(db.metadata.sorted_tables):
             conn.execute(table.delete())
+    llm._last_activity, llm._warming = float("-inf"), False
     auth.login_throttle.hits.clear()
     auth.signup_throttle.hits.clear()
     auth.feedback_throttle.hits.clear()

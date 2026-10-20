@@ -1,7 +1,7 @@
 """sfMate web server.
 
 Pages:  /  home    /login  sign up & log in    /setup  first-time profile    /app  the chatbot    /privacy    /support
-API:    /auth/*  accounts    /account (DELETE)    /profile    /welcome    /chat (streamed)    /announcements/*
+API:    /auth/*  accounts    /account (DELETE)    /profile    /welcome    /warmup    /chat (streamed)    /announcements/*
         /reminders and /feedback (iPhone app)
 """
 import json
@@ -267,6 +267,13 @@ def welcome(user=Depends(auth.current_user)):
     if text:
         update_user(user["username"], welcome={"for": key, "text": text})
     return {"message": text or None}
+
+
+@app.post("/warmup")
+def warmup(user=Depends(auth.current_user)):
+    """The app calls this when a student opens the chat: wakes the sleeping GPU while they read and type.
+    Sends the model one word and nothing about the student. Doesn't count toward the daily message limit."""
+    return {"warming": llm.warm_up() is not None}
 
 
 # ---------- chat ----------

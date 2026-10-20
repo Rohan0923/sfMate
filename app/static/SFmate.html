@@ -291,7 +291,8 @@ async function loadUser() {
     $("logout").hidden = false;
     const greeting = document.querySelector("#welcome h1");   // welcome screen is already showing: add their name
     if (greeting) greeting.textContent = welcomeText();
-    if (me.profile && !me.profile.skipped) loadWelcomeNote();
+    // Once the welcome note is settled (it may itself have woken the GPU), make sure the GPU is awake for their first question
+    (me.profile && !me.profile.skipped ? loadWelcomeNote() : Promise.resolve()).then(warmUp);
     checkAnnouncements();
     setInterval(checkAnnouncements, 60 * 1000);   // new announcements show up within a minute for open tabs
   } catch {}   // server unreachable: the status light already says "Offline"
@@ -316,6 +317,10 @@ async function loadWelcomeNote() {
     welcomeNote = null;   // model busy or offline: just keep the generic welcome
   }
   renderWelcomeNote();
+}
+// The GPU sleeps when nobody's using it: start waking it now, while they read and type (the server skips this if it's already awake)
+function warmUp() {
+  fetch(apiBase + "/warmup", { method: "POST", headers: apiHeaders() }).catch(() => {});
 }
 $("profile").onclick = () => { location.href = SETUP_PAGE; };
 $("logout").onclick = () => {

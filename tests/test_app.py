@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from app import announcements, db, prompts
+from app import announcements, db, llm, prompts
 from tests.conftest import rows
 
 
@@ -144,3 +144,16 @@ def test_announcement_preferences_are_saved_and_checked(client, make_user):
 
 def test_prompts_today_is_school_time():
     assert prompts.school_now().tzinfo is not None
+
+
+def test_warmup_needs_login_and_wakes_the_model_once(client, make_user, fake_llm, monkeypatch):
+    assert client.post("/warmup").status_code == 401
+    threads = []
+    real = llm.warm_up
+    monkeypatch.setattr(llm, "warm_up", lambda: threads.append(real()) or threads[-1])
+    h = make_user()
+    assert client.post("/warmup", headers=h).json() == {"warming": True}
+    threads[0].join()
+    assert fake_llm.calls == [[{"role": "user", "content": "hi"}]]
+    assert client.post("/warmup", headers=h).json() == {"warming": False}   # just woken: not again
+    assert len(fake_llm.calls) == 1

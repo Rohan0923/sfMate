@@ -107,3 +107,27 @@ def test_missing_config_is_a_clear_error(monkeypatch):
     monkeypatch.setattr(config, "LLM_BASE_URL", "")
     with pytest.raises(llm.LLMError, match="RUNPOD_ENDPOINT_ID"):
         list(llm.stream_chat([{"role": "user", "content": "hi"}]))
+
+
+def test_warm_up_sends_one_token_and_no_student_data():
+    llm.warm_up().join()
+    (sent,) = STATE["seen"]
+    assert sent["max_tokens"] == 1 and sent["messages"] == [{"role": "user", "content": "hi"}]
+
+
+def test_warm_up_is_skipped_when_the_model_was_just_used():
+    llm.warm_up().join()
+    assert llm.warm_up() is None   # warmed a moment ago
+    assert len(STATE["seen"]) == 1
+    llm._last_activity = float("-inf")
+    list(llm.stream_chat([{"role": "user", "content": "hi"}]))   # a real question counts as activity too
+    assert llm.warm_up() is None and len(STATE["seen"]) == 2
+
+
+def test_warm_up_failure_is_quiet_and_allows_another_try_later():
+    STATE["cold_failures"] = 5
+    llm.warm_up().join()   # the worker never came up: no exception escapes
+    assert llm._warming is False
+    llm._last_activity = float("-inf")
+    STATE["cold_failures"] = 0
+    assert llm.warm_up() is not None
