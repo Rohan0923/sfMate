@@ -2,9 +2,9 @@
 
 Pages:  /  home    /login  sign up & log in    /setup  first-time profile    /app  the chatbot    /privacy    /support
 API:    /auth/*  accounts    /account (DELETE)    /profile    /welcome    /warmup    /chat (streamed)    /announcements/*
+        /answers/{id} (pick a streamed answer back up, or DELETE to stop it)
         /reminders and /feedback (iPhone app)
 """
-import json
 import logging
 import threading
 import time
@@ -16,7 +16,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Re
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, auth, calendars, clubs, config, llm, mailer, menu, prompts, rag, reminders, router
+from . import announcements, answers, auth, calendars, clubs, config, llm, mailer, menu, prompts, rag, reminders, router
 from .db import announcement_summaries, engine, feedback, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -47,35 +47,25 @@ def client_ip(request):
     return forwarded.split(",")[0].strip() or (request.client.host if request.client else "?")
 
 
-def sse(obj):
-    return f"data: {json.dumps(obj)}\n\n"
-
-
-def stream_response(sources, pieces, on_complete=None):
-    """Server-Sent Events: {sources}, then {delta} text as it's written, then {done} (or {error}).
-    `pieces` may also yield dicts (like {"sources": [...]}) to send as they are."""
+def stream_response(answer, resumable):
+    """Server-Sent Events: {sources}, then {delta} text as it's written, then {done} (or {error})."""
     def events():
         yield ": ok\n\n"   # comment line: bytes on the wire right away, even while the model is still waking up
-        if sources is not None:
-            yield sse({"sources": sources})
-        parts = []
         try:
-            for piece in pieces:
-                if isinstance(piece, dict):
-                    yield sse(piece)
-                    continue
-                parts.append(piece)
-                yield sse({"delta": piece})
-            if on_complete:
-                on_complete("".join(parts).strip())
-        except llm.LLMError as e:
-            yield sse({"error": str(e)})
-        except Exception:
-            log.exception("stream failed")
-            yield sse({"error": "Something went wrong on our end. Try again."})
-        yield sse({"done": True})
+            yield from answer.follow()
+        finally:
+            if not resumable:
+                answer.cancelled = True   # the website stopped listening (Stop, or the tab closed): stop writing
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def answer_response(user, request_id, sources, pieces, on_complete=None):
+    """Writes the answer apart from this connection. With an X-Request-ID (the iPhone app) it keeps going if the
+    connection drops, and GET /answers/{id} picks it up again."""
+    request_id = request_id.strip()[:64]
+    return stream_response(answers.start(user["username"], request_id, sources, pieces, on_complete),
+                           resumable=bool(request_id))
 
 
 def update_user(username, **values):
@@ -302,14 +292,32 @@ def use_one_message(username):
 
 
 @app.post("/chat")
-def chat(req: ChatRequest, user=Depends(auth.current_user)):
+def chat(req: ChatRequest, user=Depends(auth.current_user), x_request_id: str = Header(default="")):
     message = req.message.strip()[:2000]
     if not message:
         raise HTTPException(400, "Type a question first")
     use_one_message(user["username"])
     history = [{"role": m["role"], "content": str(m["content"])[:4000]}
                for m in req.history if m.get("role") in ("user", "assistant")][-6:]   # last 3 exchanges
-    return stream_response(None, router.answer(message, history, user["profile"]))
+    return answer_response(user, x_request_id, None, router.answer(message, history, user["profile"]))
+
+
+@app.get("/answers/{request_id}")
+def answer_pickup(request_id: str, user=Depends(auth.current_user)):
+    """The iPhone app coming back after the student switched apps mid-answer: the answer so far, then the rest live."""
+    answer = answers.find(user["username"], request_id)
+    if not answer:
+        raise HTTPException(404, "That answer got lost while you were away. Ask again?")
+    return stream_response(answer, resumable=True)
+
+
+@app.delete("/answers/{request_id}")
+def answer_stop(request_id: str, user=Depends(auth.current_user)):
+    """The app's Stop button: stop writing an answer nobody's waiting for."""
+    answer = answers.find(user["username"], request_id)
+    if answer:
+        answer.cancelled = True
+    return {"ok": True}
 
 
 # ---------- Daily Announcements ----------
@@ -332,7 +340,7 @@ def announcement_dismiss(req: AnnouncementRequest, user=Depends(auth.current_use
 
 
 @app.post("/announcements/summary")
-def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_user)):
+def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_user), x_request_id: str = Header(default="")):
     a = announcements.find(req.id)
     if not a:
         raise HTTPException(404, "Those announcements aren't available anymore")
@@ -344,7 +352,7 @@ def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_use
     if cached:   # someone with the same topics already asked: instant, no GPU
         sources = [{"n": 1, "title": f"Daily Announcements · {a['label']}", "url": ""},
                    {"n": 2, "title": "Lancer Cafe menu", "url": config.MENU_URL}]
-        return stream_response(sources, iter([cached]))
+        return answer_response(user, x_request_id, sources, iter([cached]))
 
     def save(text):
         if not text:
@@ -355,7 +363,7 @@ def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_use
         except sa.exc.IntegrityError:
             pass   # two students said yes at the same moment; the first summary saved wins
 
-    return stream_response(None, router.announcement_summary(a, user["profile"]), on_complete=save)
+    return answer_response(user, x_request_id, None, router.announcement_summary(a, user["profile"]), on_complete=save)
 
 
 # ---------- liturgy and activity day reminders (the iPhone app schedules them on the phone) ----------

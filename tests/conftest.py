@@ -13,7 +13,7 @@ import numpy as np   # noqa: E402
 import pytest   # noqa: E402
 import sqlalchemy as sa   # noqa: E402
 
-from app import announcements, auth, calendars, clubs, db, llm, mailer, menu, rag, router, site   # noqa: E402
+from app import announcements, answers, auth, calendars, clubs, db, llm, mailer, menu, rag, router, site   # noqa: E402
 
 
 class FakeEmbedder:
@@ -60,6 +60,7 @@ def fresh_state(monkeypatch):
         for table in reversed(db.metadata.sorted_tables):
             conn.execute(table.delete())
     llm._last_activity, llm._warming = float("-inf"), False
+    answers._answers.clear()
     auth.login_throttle.hits.clear()
     auth.signup_throttle.hits.clear()
     auth.feedback_throttle.hits.clear()
