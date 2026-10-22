@@ -17,7 +17,7 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
                 │    misc          → the best sfhs.com pages, read whole (live)
                 │    general       → no sources: small talk, advice, nearby places (one step)
                 ├─ reads Daily Announcements / sends sign-up codes ──► sfMate Gmail
-                └─ asks the model ──► RunPod Serverless (vLLM, Qwen3.5-35B-A3B 4-bit), scales to zero
+                └─ asks the model ──► RunPod Serverless (vLLM, Qwen3.5-9B FP8), scales to zero
 ```
 
 Monthly cost target: under $80. Roughly $25 (Render web) + ~$6 (Postgres) + ~$4 (RunPod storage) + GPU time
@@ -50,10 +50,10 @@ The same password lets sfMate read Daily Announcements and send sign-up codes.
 
    | Setting | Value |
    |---|---|
-   | Model | `Qwen/Qwen3.5-35B-A3B-GPTQ-Int4` (Qwen's official 4-bit build, about 25 GB) |
+   | Model | `RedHatAI/Qwen3.5-9B-FP8-dynamic` (about 14 GB) |
    | Max model length | `8192` |
-   | Quantization | `moe_wna16` (what Qwen recommends for this model in vLLM) |
-   | GPU | **48 GB** (A40, A6000, L40S). Leave the bigger, pricier ones unchecked. |
+   | Quantization | blank (vLLM reads FP8 from the model) |
+   | GPU | **24 GB or more**: RTX A5000, RTX 3090, RTX 4090, RTX A6000. Leave the bigger, pricier ones unchecked. |
    | Active (min) workers | `0` (scale to zero) |
    | Max workers | `1` |
    | Idle timeout | `120` seconds (stays warm 2 minutes after the last question) |
@@ -136,7 +136,7 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 |---|---|---|
 | `DAILY_MESSAGE_LIMIT` | `40` | Questions per student per day. The main GPU-cost lever. |
 | `ALLOWED_EMAIL_DOMAIN` | `sfhs.com` | Who can sign up |
-| `LLM_MODEL` | `Qwen/Qwen3.5-35B-A3B-GPTQ-Int4` | Must match the RunPod endpoint's model |
+| `LLM_MODEL` | `RedHatAI/Qwen3.5-9B-FP8-dynamic` | Must match the RunPod endpoint's model |
 | `ANNOUNCE_SENDERS` | `@sfhs.com` | Which senders count as real announcements (comma-separated) |
 | `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements every 5 minutes (school time) |
 | `ANNOUNCE_OFF_HOURS_MINUTES` | `60` | How often to check the rest of the day (a question with no email loaded also triggers a check) |
