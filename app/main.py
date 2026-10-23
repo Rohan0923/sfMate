@@ -16,7 +16,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Re
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import announcements, answers, auth, calendars, clubs, config, llm, mailer, menu, prompts, rag, reminders, router
+from . import announcements, answers, auth, calendars, clubs, config, gpu_schedule, llm, mailer, menu, prompts, rag, reminders, router
 from .db import announcement_summaries, engine, feedback, usage, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -32,11 +32,13 @@ async def lifespan(app):
     calendars.start()
     menu.start()
     clubs.start()
+    gpu_schedule.start()
     yield
     announcements.stop()
     calendars.stop()
     menu.stop()
     clubs.stop()
+    gpu_schedule.stop()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)

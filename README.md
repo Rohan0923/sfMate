@@ -137,6 +137,8 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `DAILY_MESSAGE_LIMIT` | `40` | Questions per student per day. The main GPU-cost lever. |
 | `ALLOWED_EMAIL_DOMAIN` | `sfhs.com` | Who can sign up |
 | `LLM_MODEL` | `RedHatAI/Qwen3.5-9B-FP8-dynamic` | Must match the RunPod endpoint's model |
+| `GPU_WARM_HOURS` | `7-22` | Keeps one RunPod GPU running with the model loaded during these school-time hours (starting 10 minutes early), so nobody waits through a cold start. **Billed the whole time, idle or not.** Blank = let it sleep. |
+| `GPU_WARM_WEEKDAYS_ONLY` | `false` | `true` skips Saturday and Sunday (about a quarter cheaper) |
 | `ANNOUNCE_SENDERS` | `@sfhs.com` | Which senders count as real announcements (comma-separated) |
 | `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements every 5 minutes (school time) |
 | `ANNOUNCE_OFF_HOURS_MINUTES` | `60` | How often to check the rest of the day (a question with no email loaded also triggers a check) |
