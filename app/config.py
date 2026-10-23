@@ -31,7 +31,7 @@ LLM_BASE_URL = _env("LLM_BASE_URL") or (
 LLM_MODEL = _env("LLM_MODEL", "RedHatAI/Qwen3.5-9B-FP8-dynamic")   # must match the model the endpoint serves
 LLM_FIRST_TOKEN_TIMEOUT = int(_env("LLM_FIRST_TOKEN_TIMEOUT", "300"))   # seconds; covers a cold start
 LLM_WARMUP_INTERVAL = int(_env("LLM_WARMUP_INTERVAL", "300"))   # seconds; at most one warm-up ping per this long
-# Keep a GPU worker running (model loaded) during these school-time hours, like "7-22"; blank = let it sleep. It is billed
+# Keep a GPU worker running (model loaded) during these school-time hours, like "12-13"; blank = let it sleep. It is billed
 # the whole time, idle or not (RunPod "active worker" rate), so every hour here costs real money.
 GPU_WARM_HOURS = tuple(int(h) for h in _env("GPU_WARM_HOURS", "").split("-")) if _env("GPU_WARM_HOURS", "") else ()
 GPU_WARM_WEEKDAYS_ONLY = _env("GPU_WARM_WEEKDAYS_ONLY", "false").lower() == "true"
