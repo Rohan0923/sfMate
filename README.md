@@ -56,7 +56,7 @@ The same password lets sfMate read Daily Announcements and send sign-up codes.
    | GPU | **24 GB or more**: RTX A5000, RTX 3090, RTX 4090, RTX A6000. Leave the bigger, pricier ones unchecked. |
    | Active (min) workers | `0` (scale to zero) |
    | Max workers | `1` |
-   | Idle timeout | `120` seconds (stays warm 2 minutes after the last question) |
+   | Idle timeout | `60` seconds (stays warm 1 minute after the last question) |
    | FlashBoot | on |
    | Execution timeout | `600` seconds |
    | Network volume | the one from step 2 |
@@ -137,7 +137,7 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `DAILY_MESSAGE_LIMIT` | `40` | Questions per student per day. The main GPU-cost lever. |
 | `ALLOWED_EMAIL_DOMAIN` | `sfhs.com` | Who can sign up |
 | `LLM_MODEL` | `RedHatAI/Qwen3.5-9B-FP8-dynamic` | Must match the RunPod endpoint's model |
-| `GPU_WARM_HOURS` | `12-13` | Keeps one RunPod GPU running with the model loaded during these school-time hours (starting 10 minutes early), so nobody waits through a cold start. **Billed the whole time, idle or not.** Blank = let it sleep. |
+| `GPU_WARM_HOURS` | blank | Keeps one RunPod GPU running with the model loaded during these school-time hours (starting 10 minutes early), so nobody waits through a cold start. **Billed the whole time, idle or not.** Blank = let it sleep. |
 | `GPU_WARM_WEEKDAYS_ONLY` | `false` | `true` skips Saturday and Sunday (about a quarter cheaper) |
 | `ANNOUNCE_SENDERS` | `@sfhs.com` | Which senders count as real announcements (comma-separated) |
 | `ANNOUNCE_HOURS` | `7-11` | When to check for new announcements every 5 minutes (school time) |

@@ -26,8 +26,8 @@ services:
         sync: false
       - key: RUNPOD_ENDPOINT_ID
         sync: false
-      - key: GPU_WARM_HOURS   # keep the RunPod GPU running, model loaded, 12pm-1pm school time (billed all that time)
-        value: "12-13"
+      - key: GPU_WARM_HOURS   # blank = the GPU sleeps when idle; "12-13" would keep it running 12pm-1pm (billed all that time)
+        value: ""
       - key: LLM_MODEL
         value: RedHatAI/Qwen3.5-9B-FP8-dynamic
       - key: GMAIL_ADDRESS
