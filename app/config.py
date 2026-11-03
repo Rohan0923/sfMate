@@ -52,7 +52,7 @@ REVIEW_USERNAME = _env("REVIEW_USERNAME").lower()
 REVIEW_PASSWORD = _env("REVIEW_PASSWORD")
 
 # Shown on /support and /privacy; feedback from the app is emailed here
-SUPPORT_EMAIL = _env("SUPPORT_EMAIL", "reach.rohans@gmail.com")
+SUPPORT_EMAIL = _env("SUPPORT_EMAIL", "sfmate23@gmail.com")
 
 # The sfMate Gmail account: reads Daily Announcements (IMAP) and sends verification codes (SMTP)
 GMAIL_ADDRESS = _env("GMAIL_ADDRESS")

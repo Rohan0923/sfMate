@@ -146,7 +146,7 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 | `CALENDAR_ICS_URLS` | the two SFHS calendars | Public iCal (.ics) feeds, comma-separated. Set it to add or swap calendars |
 | `CLUBS_URL` | `https://www.sfhs.com/clubs-affinity-groups` | The clubs page (its 7 dropdowns, with moderators); blank turns it off |
 | `MENU_URL` | `https://www.sfhs.com/lancer-cafe` | The cafe page the daily menu is read from; blank turns it off |
-| `SUPPORT_EMAIL` | `reach.rohans@gmail.com` | Shown on /support and /privacy; app feedback is emailed here |
+| `SUPPORT_EMAIL` | `sfmate23@gmail.com` | Shown on /support and /privacy; app feedback is emailed here |
 | `REVIEW_USERNAME`, `REVIEW_PASSWORD` | blank | Both set: an App Store review account that logs in without an emailed code. Recreated if deleted. Change the password after each review |
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
