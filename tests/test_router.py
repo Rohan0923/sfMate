@@ -213,3 +213,14 @@ def test_summary_from_the_real_email(monkeypatch, client, make_user, fake_llm):
                  "## Guidance & Counseling Announcements", "PSAT on Wednesday, October 14th", "## Library", "whiteboard polls"):
         assert must in draft, must
     assert "WARNING" not in draft and "<" not in draft.split("Sources:")[1].split("Question:")[0]
+
+
+def test_other_accounts_never_get_the_announcements_category(fake_llm):
+    assert "announcements:" in router.CLASSIFY_INSTRUCTIONS and "announcements" not in router.CLASSIFY_INSTRUCTIONS_PUBLIC
+    fake_llm.category = "announcements"   # even a classifier that insists
+    assert router.classify("whose birthday is it?", [], TODAY, school=False) == ["misc"]
+    assert fake_llm.calls_for("classify")[0][0]["content"] == router.CLASSIFY_INSTRUCTIONS_PUBLIC
+    fake_llm.category = "calendar"
+    assert router.classify("what's in today's announcements?", [], TODAY, school=False) == ["calendar"]   # no knee-jerk
+    assert router.classify("what's in today's announcements?", [], TODAY) == ["announcements", "calendar"]   # school accounts: as before
+    assert "announcements" not in " ".join(router.classify("lunch announcements?", [], TODAY, school=False))

@@ -40,14 +40,18 @@ GPU_WARM_LEAD_MINUTES = int(_env("GPU_WARM_LEAD_MINUTES", "10"))   # start this 
 # Search index built by scripts/build_index.py
 EMBED_MODEL_ID = "BAAI/bge-base-en-v1.5"
 
-# Accounts
-ALLOWED_EMAIL_DOMAIN = _env("ALLOWED_EMAIL_DOMAIN", "sfhs.com").lower().lstrip("@")
+# Accounts: anyone can sign up with any email. An account whose verified email is at this domain is a "school account":
+# it also gets the Daily Announcements, the one source that's internal to the school (everything else sfMate reads is public)
+SCHOOL_EMAIL_DOMAIN = _env("SCHOOL_EMAIL_DOMAIN", "sfhs.com").lower().lstrip("@")
 SESSION_DAYS = int(_env("SESSION_DAYS", "30"))
-DAILY_MESSAGE_LIMIT = int(_env("DAILY_MESSAGE_LIMIT", "40"))   # per student per day; keeps the GPU bill in check
+DAILY_MESSAGE_LIMIT = int(_env("DAILY_MESSAGE_LIMIT", "40"))   # per school account per day; keeps the GPU bill in check
+# Anyone can sign up, so accounts that aren't school accounts get fewer (a throwaway email is a free extra account)
+OTHER_DAILY_MESSAGE_LIMIT = int(_env("OTHER_DAILY_MESSAGE_LIMIT", "15"))
 GOOGLE_CLIENT_ID = _env("GOOGLE_CLIENT_ID")   # optional; "" turns Google sign-in off
 
-# App Store review account: Apple's reviewers can't get an @sfhs.com code, so with both set this account exists
-# (no email needed) with this password. Blank = no review account.
+# App Store review account: so Apple's reviewers don't need an inbox for the emailed code, with both set this account
+# exists (no email needed) with this password. It isn't a school account, so it never sees the Daily Announcements.
+# Blank = no review account.
 REVIEW_USERNAME = _env("REVIEW_USERNAME").lower()
 REVIEW_PASSWORD = _env("REVIEW_PASSWORD")
 

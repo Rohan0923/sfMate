@@ -1,5 +1,8 @@
 """sfMate web server.
 
+Anyone can sign up (any email, confirmed with an emailed code). Accounts at the school's email domain also get the Daily
+Announcements; everything else sfMate answers from is public.
+
 Pages:  /  home    /login  sign up & log in    /setup  first-time profile    /app  the chatbot    /privacy    /support
 API:    /auth/*  accounts    /account (DELETE)    /profile    /welcome    /warmup    /chat (streamed)    /announcements/*
         /answers/{id} (pick a streamed answer back up, or DELETE to stop it)
@@ -106,7 +109,8 @@ def privacy_page(): return page("privacy.html", support_email=config.SUPPORT_EMA
 
 @app.get("/support")
 def support_page():
-    return page("support.html", support_email=config.SUPPORT_EMAIL, daily_limit=config.DAILY_MESSAGE_LIMIT)
+    return page("support.html", support_email=config.SUPPORT_EMAIL, daily_limit=config.DAILY_MESSAGE_LIMIT,
+                other_limit=config.OTHER_DAILY_MESSAGE_LIMIT)
 
 
 @app.get("/healthz")
@@ -141,7 +145,7 @@ class GoogleRequest(BaseModel):
 
 @app.get("/auth/config")
 def auth_config():
-    return {"google_client_id": config.GOOGLE_CLIENT_ID, "email_domain": config.ALLOWED_EMAIL_DOMAIN}
+    return {"google_client_id": config.GOOGLE_CLIENT_ID, "school_email_domain": config.SCHOOL_EMAIL_DOMAIN}
 
 
 @app.post("/auth/signup")
@@ -185,7 +189,8 @@ def logout(authorization: str = Header(default="")):
 def me(user=Depends(auth.current_user)):
     return {"name": user["name"], "username": user["username"], "email": user["email"],
             "setup_done": user["profile"] is not None, "profile": user["profile"],
-            "ai_consent": auth.has_ai_consent(user["username"])}
+            "ai_consent": auth.has_ai_consent(user["username"]),
+            "school_member": auth.is_school_member(user)}   # a school account also gets the Daily Announcements
 
 
 class ConsentRequest(BaseModel):
@@ -232,12 +237,13 @@ def save_profile(req: ProfileRequest, user=Depends(auth.current_user)):
             raise HTTPException(400, "Grade has to be 9, 10, 11, or 12")
         if len(req.first_name) > 40 or len(req.favorite_food) > 80 or len(req.hobbies) > 500:
             raise HTTPException(400, "That's a bit long, keep it short and sweet")
-        if req.announcements is not None and not set(req.announcements) <= set(announcements.TOPIC_KEYS):
-            raise HTTPException(400, "Unknown announcement topic")
         profile = {"first_name": req.first_name.strip(), "grade": req.grade,
-                   "hobbies": req.hobbies.strip(), "favorite_food": req.favorite_food.strip(),
-                   "announcements": [k for k in announcements.TOPIC_KEYS
-                                     if req.announcements is None or k in req.announcements]}
+                   "hobbies": req.hobbies.strip(), "favorite_food": req.favorite_food.strip()}
+        if auth.is_school_member(user):   # topics are only for the Daily Announcements, which only school accounts get
+            if req.announcements is not None and not set(req.announcements) <= set(announcements.TOPIC_KEYS):
+                raise HTTPException(400, "Unknown announcement topic")
+            profile["announcements"] = [k for k in announcements.TOPIC_KEYS
+                                        if req.announcements is None or k in req.announcements]
     update_user(user["username"], profile=profile)
     return {"ok": True}
 
@@ -274,13 +280,17 @@ class ChatRequest(BaseModel):
     history: list[dict] = []   # [{"role": "user"|"assistant", "content": str}, ...]
 
 
-def use_one_message(username):
+def daily_limit(user):
+    return config.DAILY_MESSAGE_LIMIT if auth.is_school_member(user) else config.OTHER_DAILY_MESSAGE_LIMIT
+
+
+def use_one_message(username, limit):
     """Counts a message toward today's limit; 429 once it's used up."""
     day = prompts.school_now().date().isoformat()
     with engine.begin() as conn:
         row = conn.execute(sa.select(usage.c.count).where(usage.c.username == username, usage.c.day == day)).first()
         used = row[0] if row else 0
-        if used >= config.DAILY_MESSAGE_LIMIT:
+        if used >= limit:
             over = True
         else:
             over = False
@@ -289,7 +299,7 @@ def use_one_message(username):
             else:
                 conn.execute(usage.insert().values(username=username, day=day, count=1))
     if over:
-        raise HTTPException(429, f"You've used all {config.DAILY_MESSAGE_LIMIT} of today's messages. "
+        raise HTTPException(429, f"You've used all {limit} of today's messages. "
                                  "They reset at midnight. See you tomorrow!")
 
 
@@ -298,10 +308,11 @@ def chat(req: ChatRequest, user=Depends(auth.current_user), x_request_id: str = 
     message = req.message.strip()[:2000]
     if not message:
         raise HTTPException(400, "Type a question first")
-    use_one_message(user["username"])
+    use_one_message(user["username"], daily_limit(user))
     history = [{"role": m["role"], "content": str(m["content"])[:4000]}
                for m in req.history if m.get("role") in ("user", "assistant")][-6:]   # last 3 exchanges
-    return answer_response(user, x_request_id, None, router.answer(message, history, user["profile"]))
+    return answer_response(user, x_request_id, None,
+                           router.answer(message, history, user["profile"], school=auth.is_school_member(user)))
 
 
 @app.get("/answers/{request_id}")
@@ -322,7 +333,7 @@ def answer_stop(request_id: str, user=Depends(auth.current_user)):
     return {"ok": True}
 
 
-# ---------- Daily Announcements ----------
+# ---------- Daily Announcements (school accounts only: the one source that isn't public) ----------
 class AnnouncementRequest(BaseModel):
     id: str
 
@@ -330,19 +341,19 @@ class AnnouncementRequest(BaseModel):
 @app.get("/announcements/status")
 def announcement_status(user=Depends(auth.current_user)):
     a = announcements.todays()
-    if not a or user["announcement_answered"] == a["id"]:
+    if not auth.is_school_member(user) or not a or user["announcement_answered"] == a["id"]:   # others: nothing to ask
         return {"available": False}
     return {"available": True, "id": a["id"], "date": a["label"], "message": prompts.ANNOUNCE_PROMPT}
 
 
 @app.post("/announcements/dismiss")
-def announcement_dismiss(req: AnnouncementRequest, user=Depends(auth.current_user)):
+def announcement_dismiss(req: AnnouncementRequest, user=Depends(auth.require_school_member)):
     update_user(user["username"], announcement_answered=req.id)   # Yes or No: either way, don't ask again
     return {"ok": True}
 
 
 @app.post("/announcements/summary")
-def announcement_summary(req: AnnouncementRequest, user=Depends(auth.current_user), x_request_id: str = Header(default="")):
+def announcement_summary(req: AnnouncementRequest, user=Depends(auth.require_school_member), x_request_id: str = Header(default="")):
     a = announcements.find(req.id)
     if not a:
         raise HTTPException(404, "Those announcements aren't available anymore")

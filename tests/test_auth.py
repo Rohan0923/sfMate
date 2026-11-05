@@ -10,11 +10,17 @@ def signup(client, username="rohan", email="rohan@sfhs.com", password="hunter22p
     return client.post("/auth/signup", json={"username": username, "email": email, "password": password})
 
 
-def test_signup_requires_school_email(client, outbox):
-    r = signup(client, email="rohan@gmail.com")
-    assert r.status_code == 400 and "@sfhs.com" in r.json()["detail"]
-    assert signup(client, email="rohan@sfhs.com.evil.com").status_code == 400   # endswith check, not "contains"
-    assert signup(client, email="rohan@notsfhs.com").status_code == 400
+def test_anyone_can_sign_up_but_only_school_emails_are_school_accounts(client, make_user):
+    for username, email, school in (("kid", "kid@gmail.com", False), ("rohan", "rohan@sfhs.com", True),
+                                    ("plus", "Rohan+sfmate@SFHS.com", True),
+                                    ("evil", "rohan@sfhs.com.evil.com", False),   # endswith check, not "contains"
+                                    ("fake", "rohan@notsfhs.com", False)):
+        h = make_user(username, email.lower())
+        assert client.get("/auth/me", headers=h).json()["school_member"] is school, email
+
+
+def test_signup_still_needs_a_valid_email(client, outbox):
+    assert signup(client, email="not-an-email").status_code == 400
     assert outbox == []
 
 
@@ -104,17 +110,20 @@ def test_sessions_expire(client, make_user):
     assert rows(db.sessions) == []   # the expired session was cleaned up (not rolled back)
 
 
-def test_google_restricted_to_school_accounts(client, monkeypatch):
+def test_google_sign_in_takes_any_verified_email(client, monkeypatch):
     from google.oauth2 import id_token
     monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
     claims = {"sub": "g1", "email": "kid@gmail.com", "email_verified": True, "name": "Kid"}
     monkeypatch.setattr(id_token, "verify_oauth2_token", lambda token, req, aud: dict(claims))
     r = client.post("/auth/google", json={"credential": "t"})
-    assert r.status_code == 403 and "@sfhs.com" in r.json()["detail"]
-    claims.update(email="kid@sfhs.com")
-    r = client.post("/auth/google", json={"credential": "t"})
     assert r.status_code == 200 and r.json()["setup_done"] is False
-    assert rows(db.users)[0]["username"] == "kid@sfhs.com"
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {r.json()['token']}"}).json()["school_member"] is False
+    claims.update(sub="g2", email="kid@sfhs.com")
+    r = client.post("/auth/google", json={"credential": "t"})
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {r.json()['token']}"}).json()["school_member"] is True
+    claims.update(sub="g3", email="liar@sfhs.com", email_verified=False)   # an unverified address proves nothing
+    assert client.post("/auth/google", json={"credential": "t"}).status_code == 401
+    assert [u["username"] for u in rows(db.users)] == ["kid@gmail.com", "kid@sfhs.com"]
 
 
 def test_password_hashing_roundtrip():

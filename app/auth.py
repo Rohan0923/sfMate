@@ -1,5 +1,6 @@
-"""Accounts: @sfhs.com sign-up with an emailed code, password login, optional Google sign-in, sessions, the App Store
-review account, and deleting an account."""
+"""Accounts: sign-up with any email and an emailed code, password login, optional Google sign-in, sessions, the App Store
+review account, and deleting an account. An account whose verified email is at the school's domain (@sfhs.com) is a
+"school account": it also gets the Daily Announcements, the one source that isn't public."""
 import hashlib
 import logging
 import re
@@ -9,7 +10,7 @@ import time
 from collections import defaultdict, deque
 
 import sqlalchemy as sa
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from . import config, mailer
 from .db import ai_consent, engine, feedback, pending_signups, sessions, usage, users
@@ -41,12 +42,19 @@ def _sha256(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def email_allowed(email):
-    return not config.ALLOWED_EMAIL_DOMAIN or email.endswith("@" + config.ALLOWED_EMAIL_DOMAIN)
+def is_school_email(email):
+    """An address at the school's domain (an exact "@sfhs.com" ending, not "contains"). Accounts only get an email after
+    proving they own it (the emailed code, or Google's verified email), so this can't be claimed by typing it."""
+    domain = config.SCHOOL_EMAIL_DOMAIN
+    return bool(domain) and (email or "").strip().lower().endswith("@" + domain)
 
 
-def domain_message():
-    return f"sfMate is only for Saint Francis students: use your @{config.ALLOWED_EMAIL_DOMAIN} email"
+def is_school_member(user):
+    return is_school_email(user["email"])
+
+
+def school_only_message():
+    return f"The Daily Announcements are only for Saint Francis students. Sign up with your @{config.SCHOOL_EMAIL_DOMAIN} email to get them."
 
 
 # ---------- throttling (one server instance, so in-memory is enough) ----------
@@ -101,6 +109,13 @@ def current_user(authorization: str = Header(default="")):
     return dict(row)
 
 
+def require_school_member(user=Depends(current_user)):
+    """FastAPI dependency for anything built on the school's internal data: 403 unless the account is a school account."""
+    if not is_school_member(user):
+        raise HTTPException(403, school_only_message())
+    return user
+
+
 def logout(authorization):
     token = bearer(authorization)
     if token:
@@ -125,8 +140,6 @@ def start_signup(username_raw, email_raw, password, ip):
         raise HTTPException(400, "Usernames are 3–32 characters: letters, numbers, and . _ -")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         raise HTTPException(400, "Please enter a valid email")
-    if not email_allowed(email):
-        raise HTTPException(400, domain_message())
     if len(password) < 8:
         raise HTTPException(400, "Passwords need at least 8 characters")
     with engine.begin() as conn:
@@ -275,8 +288,6 @@ def google_login(credential):
     email = info.get("email", "").lower()
     if not info.get("email_verified"):
         raise HTTPException(401, "Your Google email isn't verified")
-    if not email_allowed(email):
-        raise HTTPException(403, domain_message())
     with engine.begin() as conn:
         user = conn.execute(sa.select(users).where(users.c.google_sub == info["sub"])).mappings().first() \
             or find_user(conn, email)

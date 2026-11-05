@@ -34,10 +34,12 @@ services:
         sync: false
       - key: GMAIL_APP_PASSWORD
         sync: false
-      - key: ALLOWED_EMAIL_DOMAIN
+      - key: SCHOOL_EMAIL_DOMAIN   # anyone can sign up; accounts at this domain also get the Daily Announcements
         value: sfhs.com
-      - key: DAILY_MESSAGE_LIMIT
+      - key: DAILY_MESSAGE_LIMIT   # per school (@sfhs.com) account per day
         value: "40"
+      - key: OTHER_DAILY_MESSAGE_LIMIT   # per account with any other email
+        value: "15"
       - key: GOOGLE_CLIENT_ID   # optional; leave blank to keep Google sign-in off
         sync: false
       - key: REVIEW_USERNAME    # App Store review account (no emailed code); leave both blank for none

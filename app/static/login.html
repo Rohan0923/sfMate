@@ -297,6 +297,7 @@
       transform: translateY(-2px);
     }
 
+    .field-hint { font-size: 12.5px; color: #7d6b5d; line-height: 1.4; margin: 6px 0 0; }
     .verify-intro { font-size: 14px; color: #7d6b5d; line-height: 1.5; margin: 0 0 16px; text-align: left; }
     .verify-intro b { color: #3e251b; }
     .code-input { font-size: 22px !important; letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; }
@@ -419,9 +420,9 @@
                pattern="[A-Za-z0-9_.\-]{3,32}" title="3–32 characters: letters, numbers, and . _ -" required>
       </div>
       <div class="form-group">
-        <label for="signUpEmail">School email</label>
-        <input type="email" id="signUpEmail" placeholder="you@sfhs.com" autocomplete="email" required
-               pattern=".+@sfhs\.com" title="Use your @sfhs.com school email">
+        <label for="signUpEmail">Email</label>
+        <input type="email" id="signUpEmail" placeholder="you@example.com" autocomplete="email" required>
+        <p class="field-hint">Use your @sfhs.com school email to also get the Daily Announcements.</p>
       </div>
       <div class="form-group">
         <label for="signUpPassword">Password</label>
@@ -433,7 +434,7 @@
       </div>
       <button type="submit" class="modal-button" id="signUpSubmit">Sign Up</button>
     </form>
-    <!-- Step 2: the 6-digit code we emailed to their @sfhs.com address -->
+    <!-- Step 2: the 6-digit code we emailed to their address -->
     <form id="verifyForm" onsubmit="handleVerify(event)" hidden>
       <p class="verify-intro">We emailed a 6-digit code to <b id="verifyEmail"></b>. It expires in 15 minutes. Not seeing it? Check spam or junk.</p>
       <p class="form-error" id="verifyError"></p>
@@ -646,7 +647,6 @@ async function setupGoogle() {
   await loadGoogleScript();
   google.accounts.id.initialize({
     client_id: google_client_id, callback: onGoogleCredential, ux_mode: 'popup',
-    hd: 'sfhs.com',   // suggest school accounts in Google's picker (the server enforces it either way)
   });
   const container = document.getElementById('googleBtn');
   google.accounts.id.renderButton(container, {
@@ -658,7 +658,7 @@ async function setupGoogle() {
 
 function googleNotConfigured() {
   showError('googleError', SERVED
-    ? "Google sign-in isn't turned on yet. Sign up with your school email instead."
+    ? "Google sign-in isn't turned on yet. Sign up with your email instead."
     : 'Open sfMate from its website to sign in with Google.');
 }
 

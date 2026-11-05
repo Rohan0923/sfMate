@@ -6,7 +6,7 @@ import zlib
 
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ.update(DATABASE_URL=f"sqlite:///{_db.name}", APP_ENV="development",
-                  GMAIL_ADDRESS="", GMAIL_APP_PASSWORD="", GOOGLE_CLIENT_ID="", DAILY_MESSAGE_LIMIT="5",
+                  GMAIL_ADDRESS="", GMAIL_APP_PASSWORD="", GOOGLE_CLIENT_ID="", DAILY_MESSAGE_LIMIT="5", OTHER_DAILY_MESSAGE_LIMIT="3",
                   CALENDAR_ICS_URLS="", MENU_URL="", CLUBS_URL="")   # no network in tests; the calendar and menu tests feed in their own
 
 import numpy as np   # noqa: E402
@@ -36,7 +36,7 @@ class FakeLLM:
 
     def step(self, messages):
         system = messages[0]["content"]
-        if system == router.CLASSIFY_INSTRUCTIONS:
+        if system in (router.CLASSIFY_INSTRUCTIONS, router.CLASSIFY_INSTRUCTIONS_PUBLIC):
             return "classify"
         return "draft" if system.startswith(router.DRAFT_INSTRUCTIONS) else "answer"
 

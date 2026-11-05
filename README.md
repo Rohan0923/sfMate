@@ -6,9 +6,9 @@ The Saint Francis advisor chatbot, as a real web app. The website runs on **Rend
 ```
  students ──► Render (web server, always on)
                 ├─ pages: home, sign up / log in, setup, chat
-                ├─ accounts (@sfhs.com + emailed code), profiles, daily limits ──► Postgres
+                ├─ accounts (any email + emailed code), profiles, daily limits ──► Postgres
                 ├─ every question is classified, then answered from ONLY its source, drafted and checked:
-                │    announcements → Daily Announcements emails (summaries follow each student's
+                │    announcements → Daily Announcements emails, @sfhs.com accounts only (summaries follow each student's
                 │                    Announcement Preferences, plus that day's lunch)
                 │    calendar      → school calendars (Activities & Events, School Schedule; every 30 min)
                 │    courses       → Course Scheduling Guide        rules → Student-Parent Handbook
@@ -94,7 +94,7 @@ git push -u origin main
 3. It asks for the secret values: `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`.
    Leave `GOOGLE_CLIENT_ID` blank for now.
 4. Click **Apply**. The first build takes 5–10 minutes (mostly downloading PyTorch and the search model).
-5. Open the URL Render gives you (like `https://sfmate.onrender.com`) and sign up with your @sfhs.com email.
+5. Open the URL Render gives you (like `https://sfmate.onrender.com`) and sign up. Use an @sfhs.com email to also get the Daily Announcements.
    The code should arrive in a minute; check spam the first time.
 
 **Test it on the school Wi-Fi.** It blocked ngrok before. If `onrender.com` is blocked too, add a custom domain
@@ -134,8 +134,9 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 
 | Variable | Default | What it does |
 |---|---|---|
-| `DAILY_MESSAGE_LIMIT` | `40` | Questions per student per day. The main GPU-cost lever. |
-| `ALLOWED_EMAIL_DOMAIN` | `sfhs.com` | Who can sign up |
+| `DAILY_MESSAGE_LIMIT` | `40` | Questions per school (@sfhs.com) account per day. The main GPU-cost lever. |
+| `OTHER_DAILY_MESSAGE_LIMIT` | `15` | The same, for accounts with any other email (anyone can sign up, so it's lower) |
+| `SCHOOL_EMAIL_DOMAIN` | `sfhs.com` | Anyone can sign up with any email; accounts at this domain also get the Daily Announcements (the one source that isn't public) |
 | `LLM_MODEL` | `RedHatAI/Qwen3.5-9B-FP8-dynamic` | Must match the RunPod endpoint's model |
 | `GPU_WARM_HOURS` | blank | Keeps one RunPod GPU running with the model loaded during these school-time hours (starting 10 minutes early), so nobody waits through a cold start. **Billed the whole time, idle or not.** Blank = let it sleep. |
 | `GPU_WARM_WEEKDAYS_ONLY` | `false` | `true` skips Saturday and Sunday (about a quarter cheaper) |
@@ -151,7 +152,8 @@ Daily Announcements, the school calendars, and the cafe menu don't need this: th
 
 **Google sign-in (optional):** create an OAuth client ID ("Web application") in console.cloud.google.com, add your
 site's address (for example `https://sfmate.onrender.com`) under **Authorized JavaScript origins**, and set
-`GOOGLE_CLIENT_ID`. Only @sfhs.com Google accounts are accepted. Your school's Google admin may need to allow it.
+`GOOGLE_CLIENT_ID`. Any Google account works; one with an @sfhs.com email is a school account (it also gets the Daily
+Announcements).
 
 ---
 

@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from app import announcements, db, llm, prompts
+from app import announcements, db, llm, prompts, router
 from tests.conftest import rows
 
 
@@ -157,3 +157,60 @@ def test_warmup_needs_login_and_wakes_the_model_once(client, make_user, fake_llm
     assert fake_llm.calls == [[{"role": "user", "content": "hi"}]]
     assert client.post("/warmup", headers=h).json() == {"warming": False}   # just woken: not again
     assert len(fake_llm.calls) == 1
+
+
+# ---------- the Daily Announcements are for school accounts only ----------
+def test_announcements_are_only_for_school_accounts(client, make_user, fake_llm, monkeypatch):
+    kid, student = make_user("kid", "kid@gmail.com"), make_user("rohan", "rohan@sfhs.com")
+    a = fake_announcement(text=EMAIL)
+    monkeypatch.setattr(announcements, "announcements", [a])
+    assert client.get("/announcements/status", headers=kid).json() == {"available": False}   # nothing to ask them
+    assert client.get("/announcements/status", headers=student).json()["available"] is True
+    for path in ("/announcements/summary", "/announcements/dismiss"):
+        r = client.post(path, json={"id": a["id"]}, headers=kid)
+        assert r.status_code == 403 and "@sfhs.com" in r.json()["detail"], path
+    assert fake_llm.calls == [] and rows(db.announcement_summaries) == []
+    assert rows(db.users)[0]["announcement_answered"] is None   # a refused dismiss changed nothing
+    assert client.post("/announcements/summary", json={"id": a["id"]}, headers=student).status_code == 200   # still works for school accounts
+
+
+def test_announcement_questions_are_not_answered_for_other_accounts(client, make_user, fake_llm, monkeypatch):
+    monkeypatch.setattr(announcements, "announcements", [fake_announcement(text=EMAIL)])
+    kid = make_user("kid", "kid@gmail.com")
+    for question in ("What's in today's announcements?", "any announcement about the dance?"):
+        events = sse_events(client.post("/chat", json={"message": question}, headers=kid).text)
+        text = "".join(e.get("delta", "") for e in events)
+        assert text == router.NO_ANNOUNCEMENTS_REPLY and "@sfhs.com" in text and events[-1] == {"done": True}
+        assert "Rally today" not in text and EMAIL[:40] not in text
+    assert fake_llm.calls == []   # answered without a source, a classifier, or the GPU
+    events = sse_events(client.post("/chat", json={"message": "What's in today's announcements?"}, headers=make_user("rohan", "rohan@sfhs.com")).text)
+    assert "classify" in [fake_llm.step(m) for m in fake_llm.calls]   # school accounts still go through the router
+
+
+def test_topics_are_only_kept_for_school_accounts(client, make_user):
+    kid, student = make_user("kid", "kid@gmail.com"), make_user("rohan", "rohan@sfhs.com")
+    for h in (kid, student):
+        assert client.post("/profile", json={"first_name": "Sam", "announcements": ["athletics"]}, headers=h).status_code == 200
+    assert "announcements" not in client.get("/auth/me", headers=kid).json()["profile"]
+    assert client.get("/auth/me", headers=student).json()["profile"]["announcements"] == ["athletics"]
+
+
+def test_review_account_is_not_a_school_account(client, monkeypatch):
+    from app import auth, config
+    monkeypatch.setattr(config, "REVIEW_USERNAME", "appreview")
+    monkeypatch.setattr(config, "REVIEW_PASSWORD", "review-password-123")
+    auth.seed_review_account()
+    token = client.post("/auth/login", json={"login": "appreview", "password": "review-password-123"}).json()["token"]
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
+    assert me["school_member"] is False
+
+
+def test_other_accounts_get_a_lower_daily_limit(client, make_user):
+    kid, student = make_user("kid", "kid@gmail.com"), make_user("rohan", "rohan@sfhs.com")
+    for _ in range(3):   # OTHER_DAILY_MESSAGE_LIMIT=3 in tests (DAILY_MESSAGE_LIMIT=5)
+        assert client.post("/chat", json={"message": "hi"}, headers=kid).status_code == 200
+    r = client.post("/chat", json={"message": "hi"}, headers=kid)
+    assert r.status_code == 429 and "all 3 of today's messages" in r.json()["detail"]
+    for _ in range(5):
+        assert client.post("/chat", json={"message": "hi"}, headers=student).status_code == 200
+    assert client.post("/chat", json={"message": "hi"}, headers=student).status_code == 429

@@ -146,7 +146,7 @@
         <p class="hint">(Optional)</p>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="announceSection" hidden>   <!-- school accounts only: shown once /auth/me says so -->
         <label id="announceLabel">Announcement Preferences</label>
         <details class="dropdown" id="announceDropdown" aria-labelledby="announceLabel">
           <summary id="announceSummary">All topics</summary>
@@ -227,6 +227,7 @@ $('announceNone').onclick = () => setTopics([]);
 paintTopics();
 
 // ---------- saving ----------
+let isSchool = false;   // a school (@sfhs.com) account: the only kind that gets the Daily Announcements
 function goToLogin() { localStorage.removeItem('sfmate_session'); location.replace(LOGIN_URL); }
 
 async function saveProfile(profile) {
@@ -253,7 +254,7 @@ $('setupForm').addEventListener('submit', async (e) => {
       grade: +grade.value,
       hobbies: $('hobbies').value.trim(),
       favorite_food: $('food').value.trim(),
-      announcements: chosenTopics(),
+      announcements: isSchool ? chosenTopics() : undefined,   // only school accounts get the Daily Announcements
     });
     location.replace(APP_URL);
   } catch (err) {
@@ -289,6 +290,8 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.clas
     const res = await fetch(API + '/auth/me', { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) return goToLogin();
     const me = await res.json();
+    isSchool = !!me.school_member;
+    $('announceSection').hidden = !isSchool;
     const p = me.profile;
     if (p && !p.skipped) {   // pre-fill what they told us before
       $('firstName').value = p.first_name || '';

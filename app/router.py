@@ -2,7 +2,9 @@
 
 1. classify it into one category (or two): announcements, calendar, courses, rules, menu, clubs, misc, general
    (general: small talk and questions that don't need the school's sources, answered in one step from the
-   model's own knowledge; the rest go through steps 2-5)
+   model's own knowledge; the rest go through steps 2-5). The Daily Announcements are the one source that isn't
+   public, so they're only for school accounts: for everyone else that category doesn't exist, and a question about
+   the announcements gets a short explanation instead (no source is read, no model is called)
 2. read ONLY that category's source (isolated, so two places can't contradict each other)
 3. draft an answer; if the source doesn't have it, fall back to the Misc path (the best sfhs.com pages, read whole)
 4. check the draft against the sources (for calendar answers, against the full entries of the dates it names)
@@ -36,12 +38,22 @@ CATEGORIES = {
     "general": "anything that doesn't need Saint Francis's own information: greetings and small talk, advice, "
                "homework help, general knowledge, places and things to do around Mountain View",
 }
-CLASSIFY_INSTRUCTIONS = (
-    "Sort a Saint Francis High School student's question into the category whose source can answer it. "
-    "Categories:\n" + "\n".join(f"{name}: {what}" for name, what in CATEGORIES.items()) +
-    "\nReply with only the category name, or two names separated by a comma if the question truly needs both. "
-    "No other words."
-)
+PUBLIC_CATEGORIES = {name: what for name, what in CATEGORIES.items() if name != "announcements"}
+
+
+def _classify_instructions(categories):
+    return ("Sort a Saint Francis High School student's question into the category whose source can answer it. "
+            "Categories:\n" + "\n".join(f"{name}: {what}" for name, what in categories.items()) +
+            "\nReply with only the category name, or two names separated by a comma if the question truly needs both. "
+            "No other words.")
+
+
+CLASSIFY_INSTRUCTIONS = _classify_instructions(CATEGORIES)
+CLASSIFY_INSTRUCTIONS_PUBLIC = _classify_instructions(PUBLIC_CATEGORIES)   # accounts that aren't school accounts
+NO_ANNOUNCEMENTS_REPLY = (
+    "The Daily Announcements are emailed to Saint Francis students' school accounts, so sfMate only shares them with "
+    "accounts signed up with an @sfhs.com email. I can still help with the school calendar, lunch menu, clubs, "
+    "classes, and school rules. What do you want to know?")
 ANNOUNCEMENT_WORDS = re.compile(r"\bannouncements?\b", re.I)
 MEAL_WORDS = re.compile(r"\b(lunch|lunches|breakfast|menu)\b", re.I)
 COURSE_SIGNS = re.compile(r"\b(courses?|class(es)?|prereq\w*|honors|ap|electives?|credits?|graduat\w*)\b", re.I)
@@ -57,8 +69,8 @@ HISTORY = 4             # earlier messages kept (for follow-ups), each trimmed
 HISTORY_CHARS = 1200
 
 
-def _heuristic(question, today):
-    if ANNOUNCEMENT_WORDS.search(question):
+def _heuristic(question, today, school=True):
+    if school and ANNOUNCEMENT_WORDS.search(question):
         return ["announcements"]
     if menu.wants_menu(question):
         return ["menu"]
@@ -70,17 +82,19 @@ def _heuristic(question, today):
     return ["misc"]
 
 
-def classify(question, history, today):
+def classify(question, history, today, school=True):
+    """`school`: a school account (the Daily Announcements are one of its sources). Anyone else never gets that category."""
     prev = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
     asked = (f"Previous question (for context): {prev[:300]}\n" if prev else "") + f"Question: {question}"
-    reply = llm.complete([{"role": "system", "content": CLASSIFY_INSTRUCTIONS},
+    categories = CATEGORIES if school else PUBLIC_CATEGORIES
+    reply = llm.complete([{"role": "system", "content": CLASSIFY_INSTRUCTIONS if school else CLASSIFY_INSTRUCTIONS_PUBLIC},
                           {"role": "user", "content": asked}], max_tokens=12, temperature=0)
-    found = list(dict.fromkeys(w for w in re.findall(r"[a-z]+", reply.lower()) if w in CATEGORIES))
+    found = list(dict.fromkeys(w for w in re.findall(r"[a-z]+", reply.lower()) if w in categories))
     if not found:
         log.warning("classifier said %r; using keyword rules", reply[:60])
-        found = _heuristic(question, today)
+        found = _heuristic(question, today, school)
     # knee-jerk rules: these words always mean these sources
-    if ANNOUNCEMENT_WORDS.search(question):
+    if school and ANNOUNCEMENT_WORDS.search(question):
         found = ["announcements"] + [c for c in found if c != "announcements"]
     if MEAL_WORDS.search(question) and "menu" not in found:
         found = (["announcements", "menu"] if found[:1] == ["announcements"] else ["menu"]) + [c for c in found if c not in ("announcements", "menu")]
@@ -333,9 +347,15 @@ def run(contexts, question, history, profile, now):
                                max_tokens=1000, temperature=0.3)
 
 
-def answer(question, history, profile, now=None):
+def answer(question, history, profile, now=None, school=False):
+    """`school` is off unless the caller says this is a school account: the Daily Announcements fail closed."""
     now = now or prompts.school_now()
-    categories = classify(question, history, now.date())
+    if not school and ANNOUNCEMENT_WORDS.search(question):
+        log.info("question %r -> announcements, but this isn't a school account", question[:80])
+        yield {"sources": []}
+        yield NO_ANNOUNCEMENTS_REPLY
+        return
+    categories = classify(question, history, now.date(), school)
     log.info("question %r -> %s", question[:80], "+".join(categories))
     if categories == ["general"]:   # no sources to draft from or check against: one step
         yield {"sources": []}

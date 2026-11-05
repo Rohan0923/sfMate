@@ -121,4 +121,5 @@ def test_privacy_and_support_pages(client):
         r = client.get(path)
         assert r.status_code == 200 and marker in r.text, path
         assert config.SUPPORT_EMAIL in r.text and "{{" not in r.text, path
-    assert f"{config.DAILY_MESSAGE_LIMIT} messages per day" in client.get("/support").text
+    support = client.get("/support").text
+    assert f"{config.DAILY_MESSAGE_LIMIT} messages per day" in support and f"{config.OTHER_DAILY_MESSAGE_LIMIT} per day" in support

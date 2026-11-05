@@ -194,12 +194,14 @@
 <script>
 const SUGGESTIONS = [
   "When is the next liturgy?",
-  "Announcement summary",
+  "Announcement summary",   // school accounts only (suggestions() swaps it for everyone else)
   "What's on the menu?",
   "Upcoming events this week?",
   "When's the next school holiday?",
   "When does the grading period end?",
 ];
+let schoolMember = false;   // a school (@sfhs.com) account: the only kind that gets the Daily Announcements
+const suggestions = () => SUGGESTIONS.map((s) => (schoolMember || s !== "Announcement summary" ? s : "What's the dress code?"));
 const HISTORY_TURNS = 6;   // messages of context sent with each question (server keeps the last 6 too)
 
 const $ = (id) => document.getElementById(id);
@@ -285,6 +287,9 @@ async function loadUser() {
     const r = await fetch(apiBase + "/auth/me", { headers: apiHeaders() });
     if (r.status === 401) return goToLogin();
     const me = await r.json();
+    schoolMember = !!me.school_member;
+    const chips = document.querySelector("#welcome .suggestions");   // the welcome screen is already showing: fix its chips
+    if (chips) { chips.innerHTML = suggestions().map((s) => `<button class="suggestion">${escapeHtml(s)}</button>`).join(""); wireSuggestions(); }
     firstName = me.profile?.first_name || "";
     $("userName").textContent = firstName || me.name;
     $("profile").hidden = false;
@@ -293,8 +298,10 @@ async function loadUser() {
     if (greeting) greeting.textContent = welcomeText();
     // Once the welcome note is settled (it may itself have woken the GPU), make sure the GPU is awake for their first question
     (me.profile && !me.profile.skipped ? loadWelcomeNote() : Promise.resolve()).then(warmUp);
-    checkAnnouncements();
-    setInterval(checkAnnouncements, 60 * 1000);   // new announcements show up within a minute for open tabs
+    if (schoolMember) {
+      checkAnnouncements();
+      setInterval(checkAnnouncements, 60 * 1000);   // new announcements show up within a minute for open tabs
+    }
   } catch {}   // server unreachable: the status light already says "Offline"
 }
 
@@ -410,10 +417,14 @@ function showWelcome() {
       <h1>${escapeHtml(welcomeText())}</h1>
       <div class="welcome-note" hidden></div>
       <p>Ask me about classes, rules, events, tuition — anything on sfhs.com or in the Student-Parent Handbook.</p>
-      <div class="suggestions">${SUGGESTIONS.map((s) => `<button class="suggestion">${escapeHtml(s)}</button>`).join("")}</div>
+      <div class="suggestions">${suggestions().map((s) => `<button class="suggestion">${escapeHtml(s)}</button>`).join("")}</div>
     </div>`;
-  thread.querySelectorAll(".suggestion").forEach((b) => (b.onclick = () => send(b.textContent)));
+  wireSuggestions();
   renderWelcomeNote();
+}
+
+function wireSuggestions() {
+  thread.querySelectorAll(".suggestion").forEach((b) => (b.onclick = () => send(b.textContent)));
 }
 
 // ---------- sending ----------
