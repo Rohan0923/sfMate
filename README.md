@@ -160,7 +160,7 @@ Announcements).
 ## When something's off
 
 - **Render → sfmate → Logs** shows everything: sign-ups, announcement checks, model errors.
-- **How many people use it:** Render → sfmate → Shell, then `python -m scripts.stats`. It prints counts only (accounts, sign-ups per day, people and messages), never names, emails, or questions, and leaves out the App Store review account.
+- **How many people use it:** Render → sfmate → Shell, then `python -m scripts.stats`. It prints counts (accounts, sign-ups per day, people and messages). Add `--users` to also list each account's name, email, join time, and message count. It never shows what anyone asked, and it leaves out the App Store review account.
 - **"Waking up sfMate's brain…" for a long time:** the GPU is cold-starting. Normal for the first question after
   a break (1–3 minutes). If it never answers, check RunPod's endpoint page (are workers starting? any credit left?).
 - **Codes not arriving:** check spam. The logs say "couldn't send code" if Gmail rejected the app password.
